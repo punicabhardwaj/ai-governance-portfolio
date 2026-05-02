@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>H1B Job Navigator · Live Job Search</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #080c14; }</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useEffect, useRef } = React;
+
+// ============================================================
+// SPONSOR DATABASE - USCIS H1B Disclosure Data
+// ============================================================
+const SPONSOR_DB = {
+  "google": { tier: "Strong", likelihood: 99 }, "alphabet": { tier: "Strong", likelihood: 99 },
+  "microsoft": { tier: "Strong", likelihood: 99 }, "amazon": { tier: "Strong", likelihood: 99 },
+  "aws": { tier: "Strong", likelihood: 99 }, "meta": { tier: "Strong", likelihood: 97 },
+  "apple": { tier: "Strong", likelihood: 95 }, "salesforce": { tier: "Strong", likelihood: 95 },
+  "servicenow": { tier: "Strong", likelihood: 93 }, "workday": { tier: "Strong", likelihood: 92 },
+  "adobe": { tier: "Strong", likelihood: 92 }, "databricks": { tier: "Strong", likelihood: 90 },
+  "snowflake": { tier: "Strong", likelihood: 90 }, "palantir": { tier: "Strong", likelihood: 88 },
+  "nvidia": { tier: "Strong", likelihood: 95 }, "oracle": { tier: "Strong", likelihood: 93 },
+  "cisco": { tier: "Strong", likelihood: 94 }, "ibm": { tier: "Strong", likelihood: 95 },
+  "stripe": { tier: "Strong", likelihood: 88 }, "airbnb": { tier: "Strong", likelihood: 85 },
+  "uber": { tier: "Strong", likelihood: 88 }, "linkedin": { tier: "Strong", likelihood: 92 },
+  "okta": { tier: "Strong", likelihood: 87 }, "crowdstrike": { tier: "Strong", likelihood: 86 },
+  "palo alto networks": { tier: "Strong", likelihood: 87 }, "datadog": { tier: "Strong", likelihood: 86 },
+  "zoom": { tier: "Strong", likelihood: 84 }, "atlassian": { tier: "Strong", likelihood: 85 },
+  "github": { tier: "Strong", likelihood: 88 }, "cloudflare": { tier: "Strong", likelihood: 84 },
+  "deloitte": { tier: "Strong", likelihood: 95 }, "accenture": { tier: "Strong", likelihood: 95 },
+  "ey": { tier: "Strong", likelihood: 93 }, "ernst": { tier: "Strong", likelihood: 93 },
+  "pwc": { tier: "Strong", likelihood: 93 }, "kpmg": { tier: "Strong", likelihood: 91 },
+  "mckinsey": { tier: "Strong", likelihood: 90 }, "capgemini": { tier: "Strong", likelihood: 94 },
+  "cognizant": { tier: "Strong", likelihood: 96 }, "infosys": { tier: "Strong", likelihood: 97 },
+  "wipro": { tier: "Strong", likelihood: 96 }, "tcs": { tier: "Strong", likelihood: 97 },
+  "tata": { tier: "Strong", likelihood: 97 }, "t-mobile": { tier: "Strong", likelihood: 88 },
+  "at&t": { tier: "Strong", likelihood: 87 }, "verizon": { tier: "Strong", likelihood: 86 },
+  "comcast": { tier: "Strong", likelihood: 85 }, "jpmorgan": { tier: "Strong", likelihood: 90 },
+  "goldman sachs": { tier: "Strong", likelihood: 88 }, "capital one": { tier: "Strong", likelihood: 87 },
+  "intuit": { tier: "Strong", likelihood: 88 }, "block": { tier: "Strong", likelihood: 83 },
+  "square": { tier: "Strong", likelihood: 83 }, "splunk": { tier: "Strong", likelihood: 85 },
+  "twilio": { tier: "Strong", likelihood: 83 }, "veeva": { tier: "Strong", likelihood: 82 },
+  "epic": { tier: "Moderate", likelihood: 72 },
+  // known non-sponsors
+  "spacex": { tier: "None", likelihood: 0 }, "raytheon": { tier: "None", likelihood: 0 },
+  "lockheed": { tier: "None", likelihood: 0 }, "northrop": { tier: "None", likelihood: 0 },
+  "booz allen": { tier: "None", likelihood: 5 }, "saic": { tier: "None", likelihood: 5 },
+};
+
+function lookupSponsor(companyName) {
+  if (!companyName) return null;
+  const lower = companyName.toLowerCase();
+  for (const [key, val] of Object.entries(SPONSOR_DB)) {
+    if (lower.includes(key)) return { company: companyName, ...val };
+  }
+  return null;
+}
+
+// ============================================================
+// SPONSORSHIP SIGNAL DETECTOR
+// ============================================================
+const POS_SIGNALS = [
+  "will sponsor","visa sponsorship","sponsorship available","h1b","h-1b",
+  "work authorization provided","we sponsor","sponsoring","immigration assistance",
+  "open to sponsorship","visa support","sponsorship considered","all visa statuses",
+  "sponsorship for qualified","we will support","will support work visa"
+];
+const NEG_SIGNALS = [
+  "must be authorized","no sponsorship","sponsorship not available","cannot sponsor",
+  "will not sponsor","us citizen only","citizens only","without sponsorship","no visa",
+  "permanent resident only","green card only","us persons only","not able to sponsor",
+  "authorized to work in the us without","must be eligible to work without sponsorship",
+  "authorization without employer sponsorship"
+];
+
+function analyzeSponsorship(text) {
+  if (!text) return { verdict: "unknown", pos: [], neg: [] };
+  const lower = text.toLowerCase();
+  const pos = POS_SIGNALS.filter(s => lower.includes(s));
+  const neg = NEG_SIGNALS.filter(s => lower.includes(s));
+  if (neg.length > 0 && pos.length === 0) return { verdict: "no", pos, neg };
+  if (pos.length > 0 && neg.length === 0) return { verdict: "yes", pos, neg };
+  if (pos.length > 0 && neg.length > 0) return { verdict: "mixed", pos, neg };
+  return { verdict: "unknown", pos, neg };
+}
+
+// ============================================================
+// APIFY API HELPERS
+// ============================================================
+async function startApifyRun(apiKey, actorId, input) {
+  const res = await fetch(`https://api.apify.com/v2/acts/${actorId}/runs?token=${apiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err?.error?.message || `Apify error ${res.status}`);
+  }
+  return res.json();
+}
+
+async function pollRunStatus(apiKey, runId) {
+  const res = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apiKey}`);
+  return res.json();
+}
+
+async function getDataset(apiKey, datasetId, limit = 50) {
+  const res = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${apiKey}&limit=${limit}&clean=true`);
+  return res.json();
+}
+
+// ============================================================
+// ROLE SEARCH CONFIGS
+// ============================================================
+const ROLE_QUERIES = {
+  "TPM + AI Governance": "technical product manager AI governance",
+  "TPM - General": "technical program manager",
+  "PM - Product Manager": "product manager AI data governance",
+  "Data Governance PM": "data governance product manager",
+  "Program Manager": "program manager technology governance",
+  "AI Risk & Compliance": "AI risk compliance product manager",
+};
+
+const LOCATIONS = [
+  "Seattle, WA", "San Francisco, CA", "New York, NY", "Austin, TX",
+  "Remote", "Bellevue, WA", "Redmond, WA", "Chicago, IL", "Boston, MA",
+  "Denver, CO", "Los Angeles, CA", "Washington, DC"
+];
+
+// ============================================================
+// CSS
+// ============================================================
+const css = `
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #080c14; }
+  .root { min-height: 100vh; background: #080c14; color: #e2e8f4; font-family: 'DM Sans', sans-serif; }
+
+  .hdr { border-bottom: 1px solid #1a2235; padding: 16px 32px; display: flex; align-items: center; gap: 14px; background: #0a0f1c; flex-wrap: wrap; }
+  .hdr-logo { font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; color: #38bdf8; letter-spacing: .12em; text-transform: uppercase; }
+  .hdr-logo span { color: #64748b; }
+  .hdr-badge { font-family: 'Space Mono', monospace; font-size: 10px; padding: 3px 8px; border: 1px solid #1e3a5f; border-radius: 3px; color: #38bdf8; background: #0c1929; letter-spacing: .1em; }
+  .hdr-powered { margin-left: auto; font-family: 'Space Mono', monospace; font-size: 10px; color: #334155; }
+
+  .tabs { display: flex; background: #0a0f1c; border-bottom: 1px solid #1a2235; padding: 0 16px; overflow-x: auto; }
+  .tab { background: transparent; border: none; color: #64748b; padding: 14px 18px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all .15s; white-space: nowrap; }
+  .tab:hover { color: #94a3b8; }
+  .tab.active { color: #38bdf8; border-bottom-color: #38bdf8; }
+
+  .body { padding: 24px 32px; max-width: 1200px; margin: 0 auto; }
+
+  /* API KEY SETUP */
+  .setup-card { background: #0d1525; border: 1px solid #1a2840; border-radius: 10px; padding: 24px; margin-bottom: 24px; }
+  .setup-title { font-family: 'Space Mono', monospace; font-size: 12px; color: #38bdf8; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .setup-desc { font-size: 13px; color: #64748b; margin-bottom: 16px; line-height: 1.6; }
+  .key-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .key-input { flex: 1; min-width: 280px; background: #080c14; border: 1px solid #1e2d42; border-radius: 6px; padding: 10px 14px; font-family: 'Space Mono', monospace; font-size: 13px; color: #e2e8f4; outline: none; transition: border-color .2s; }
+  .key-input:focus { border-color: #38bdf8; }
+  .key-status { font-family: 'Space Mono', monospace; font-size: 11px; padding: 4px 10px; border-radius: 4px; }
+  .key-ok { background: #052e16; color: #4ade80; border: 1px solid #14532d; }
+  .key-missing { background: #2a1e06; color: #fbbf24; border: 1px solid #78350f; }
+  .setup-steps { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-top: 16px; }
+  .step { background: #080c14; border-radius: 6px; padding: 12px 14px; }
+  .step-num { font-family: 'Space Mono', monospace; font-size: 10px; color: #38bdf8; letter-spacing: .08em; margin-bottom: 4px; }
+  .step-text { font-size: 12px; color: #64748b; line-height: 1.5; }
+  .step-link { color: #38bdf8; text-decoration: underline; cursor: pointer; }
+
+  /* SEARCH FORM */
+  .search-card { background: #0d1525; border: 1px solid #1a2840; border-radius: 10px; padding: 24px; margin-bottom: 20px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 12px; align-items: end; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field-label { font-family: 'Space Mono', monospace; font-size: 10px; color: #64748b; letter-spacing: .1em; text-transform: uppercase; }
+  .field-input { background: #080c14; border: 1px solid #1e2d42; border-radius: 6px; padding: 10px 14px; font-family: 'DM Sans', sans-serif; font-size: 13px; color: #e2e8f4; outline: none; transition: border-color .2s; }
+  .field-input:focus { border-color: #38bdf8; }
+  .field-select { appearance: none; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+  .field-select option { background: #0d1525; }
+  .btn { padding: 10px 22px; border-radius: 6px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all .2s; white-space: nowrap; }
+  .btn-primary { background: #38bdf8; color: #080c14; }
+  .btn-primary:hover { background: #7dd3fc; }
+  .btn-primary:disabled { background: #1e3a52; color: #475569; cursor: not-allowed; }
+  .btn-secondary { background: transparent; color: #64748b; border: 1px solid #1e2d42; }
+  .btn-secondary:hover { border-color: #334155; color: #94a3b8; }
+
+  /* FILTER BAR */
+  .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+  .filter-chip { background: #0d1525; border: 1px solid #1e2d42; color: #64748b; padding: 5px 12px; border-radius: 20px; font-size: 12px; cursor: pointer; transition: all .15s; font-family: 'DM Sans', sans-serif; }
+  .filter-chip:hover { border-color: #38bdf8; color: #38bdf8; }
+  .filter-chip.active { background: #0c2034; border-color: #38bdf8; color: #38bdf8; }
+  .filter-chip.active-green { background: #052e16; border-color: #10b981; color: #10b981; }
+  .filter-chip.active-red { background: #2d0a0a; border-color: #ef4444; color: #ef4444; }
+  .results-count { font-family: 'Space Mono', monospace; font-size: 11px; color: #475569; margin-left: auto; }
+
+  /* LOADING */
+  .loading-card { background: #0d1525; border: 1px solid #1a2840; border-radius: 10px; padding: 48px; text-align: center; }
+  .spinner { width: 40px; height: 40px; border: 3px solid #1e2d42; border-top-color: #38bdf8; border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 20px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-title { font-family: 'Space Mono', monospace; font-size: 13px; color: #38bdf8; letter-spacing: .1em; margin-bottom: 6px; }
+  .loading-sub { font-size: 12px; color: #475569; }
+  .progress-bar { width: 200px; height: 3px; background: #1e2d42; border-radius: 2px; margin: 16px auto 0; overflow: hidden; }
+  .progress-fill { height: 100%; background: #38bdf8; border-radius: 2px; transition: width .5s ease; }
+
+  /* JOB CARDS */
+  .job-grid { display: grid; gap: 12px; }
+  .job-card { background: #0d1525; border: 1px solid #1a2840; border-radius: 8px; padding: 18px 20px; cursor: pointer; transition: all .15s; }
+  .job-card:hover { border-color: #38bdf8; }
+  .job-card.expanded { border-color: #38bdf8; background: #0e1830; }
+  .jc-top { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: start; }
+  .jc-title { font-size: 16px; font-weight: 700; color: #f1f5f9; margin-bottom: 3px; }
+  .jc-company { font-size: 14px; color: #38bdf8; font-weight: 500; margin-bottom: 6px; }
+  .jc-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; color: #64748b; margin-bottom: 10px; }
+  .jc-snippet { font-size: 13px; color: #94a3b8; line-height: 1.5; }
+  .jc-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 120px; }
+  .sponsorship-badge { font-family: 'Space Mono', monospace; font-size: 10px; padding: 4px 10px; border-radius: 4px; font-weight: 700; letter-spacing: .05em; text-align: center; }
+  .spons-yes { background: #052e16; color: #4ade80; border: 1px solid #14532d; }
+  .spons-no { background: #2d0a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+  .spons-mixed { background: #2a1e06; color: #fbbf24; border: 1px solid #78350f; }
+  .spons-unknown { background: #1e2d42; color: #64748b; border: 1px solid #334155; }
+  .db-badge { font-family: 'Space Mono', monospace; font-size: 9px; padding: 3px 7px; border-radius: 3px; }
+  .db-strong { background: #052e16; color: #4ade80; border: 1px solid #14532d; }
+  .db-moderate { background: #2a1e06; color: #fbbf24; border: 1px solid #78350f; }
+  .db-none { background: #2d0a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+  .db-unknown { background: #1e2d42; color: #64748b; border: 1px solid #334155; }
+  .jc-expand { margin-top: 14px; padding-top: 14px; border-top: 1px dashed #1a2840; }
+  .jc-desc { font-size: 13px; color: #94a3b8; line-height: 1.6; margin-bottom: 14px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; }
+  .signals-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .signal-chip { font-family: 'Space Mono', monospace; font-size: 10px; padding: 3px 8px; border-radius: 3px; }
+  .sig-pos { background: #052e16; color: #4ade80; border: 1px solid #14532d; }
+  .sig-neg { background: #2d0a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+  .apply-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .apply-btn { display: inline-flex; align-items: center; gap: 6px; background: #38bdf8; color: #080c14; padding: 9px 18px; border-radius: 5px; font-size: 13px; font-weight: 700; cursor: pointer; border: none; transition: all .15s; text-decoration: none; }
+  .apply-btn:hover { background: #7dd3fc; }
+  .click-hint { font-size: 10px; color: #334155; font-family: 'Space Mono', monospace; margin-top: 6px; letter-spacing: .04em; }
+  .job-card:hover .click-hint, .job-card.expanded .click-hint { color: #38bdf8; }
+
+  /* EMPTY */
+  .empty { text-align: center; padding: 60px 20px; }
+  .empty-icon { font-size: 40px; margin-bottom: 14px; }
+  .empty-title { font-family: 'Space Mono', monospace; font-size: 14px; color: #64748b; margin-bottom: 8px; }
+  .empty-sub { font-size: 13px; color: #475569; }
+  .error-box { background: #1a0808; border: 1px solid #ef4444; border-radius: 8px; padding: 14px 18px; color: #fca5a5; font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
+
+  /* JD DETECTOR TAB */
+  .detector-card { background: #0d1525; border: 1px solid #1a2840; border-radius: 10px; padding: 24px; margin-bottom: 20px; }
+  .detector-ta { width: 100%; min-height: 180px; background: #080c14; border: 1px solid #1e2d42; border-radius: 6px; padding: 14px; font-family: 'DM Sans', sans-serif; font-size: 13px; color: #e2e8f4; outline: none; resize: vertical; transition: border-color .2s; line-height: 1.6; }
+  .detector-ta:focus { border-color: #38bdf8; }
+  .result-banner { border-radius: 8px; padding: 16px 20px; margin-top: 14px; }
+  .res-yes { background: #062a1a; border: 1px solid #10b981; }
+  .res-no { background: #2a0808; border: 1px solid #ef4444; }
+  .res-mixed { background: #2a1a06; border: 1px solid #f97316; }
+  .res-unknown { background: #1a1a2a; border: 1px solid #6366f1; }
+  .res-title { font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 6px; }
+  .res-yes .res-title { color: #10b981; } .res-no .res-title { color: #ef4444; }
+  .res-mixed .res-title { color: #f97316; } .res-unknown .res-title { color: #6366f1; }
+  .res-body { font-size: 13px; color: #94a3b8; line-height: 1.6; }
+
+  /* TIPS TAB */
+  .tips-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  .tip-card { background: #0d1525; border: 1px solid #1a2840; border-radius: 8px; padding: 18px; }
+  .tip-icon { font-size: 20px; margin-bottom: 10px; }
+  .tip-title { font-size: 14px; font-weight: 700; color: #f1f5f9; margin-bottom: 6px; }
+  .tip-text { font-size: 12px; color: #64748b; line-height: 1.6; }
+
+  .sec-label { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: .15em; color: #38bdf8; text-transform: uppercase; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .sec-label::after { content: ''; flex: 1; height: 1px; background: #1a2840; }
+  .sec-sub { font-size: 13px; color: #64748b; margin-bottom: 20px; line-height: 1.6; }
+
+  ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: #0a0f1c; } ::-webkit-scrollbar-thumb { background: #1e2d42; border-radius: 4px; }
+
+  @media(max-width: 900px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .body { padding: 16px; }
+    .jc-top { grid-template-columns: 1fr; }
+    .jc-badges { flex-direction: row; align-items: flex-start; }
+    .tips-grid { grid-template-columns: 1fr; }
+    .setup-steps { grid-template-columns: 1fr; }
+    .hdr-powered { display: none; }
+  }
+`;
+
+// ============================================================
+// MAIN APP
+// ============================================================
+function App() {
+  const [tab, setTab] = useState("search");
+  const [apiKey, setApiKey] = useState(localStorage.getItem("apify_key") || "");
+  const [apiKeySaved, setApiKeySaved] = useState(!!localStorage.getItem("apify_key"));
+  const [role, setRole] = useState("TPM + AI Governance");
+  const [location, setLocation] = useState("Remote");
+  const [maxJobs, setMaxJobs] = useState(20);
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState("");
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState("");
+  const [expandedId, setExpandedId] = useState(null);
+  const [sponsorFilter, setSponsorFilter] = useState("all");
+  const [jdText, setJdText] = useState("");
+  const [jdResult, setJdResult] = useState(null);
+  const pollRef = useRef(null);
+
+  const saveKey = () => {
+    localStorage.setItem("apify_key", apiKey);
+    setApiKeySaved(true);
+  };
+
+  const clearKey = () => {
+    localStorage.removeItem("apify_key");
+    setApiKey("");
+    setApiKeySaved(false);
+  };
+
+  // Normalize jobs from Apify Indeed actor output
+  function normalizeJobs(items) {
+    return items.map((item, i) => {
+      const title = item.positionName || item.title || item.jobTitle || "Untitled";
+      const company = item.company || item.companyName || "Unknown Company";
+      const loc = item.location || item.jobLocation || "";
+      const salary = item.salary || item.salaryRange || "";
+      const url = item.url || item.jobUrl || item.applyUrl || "#";
+      const description = item.description || item.jobDescription || item.snippet || "";
+      const snippet = description.slice(0, 220) + (description.length > 220 ? "..." : "");
+      const posted = item.postedAt || item.datePosted || "";
+      const sponsorship = analyzeSponsorship(title + " " + description);
+      const sponsor = lookupSponsor(company);
+
+      return { id: i, title, company, location: loc, salary, url, description, snippet, posted, sponsorship, sponsor };
+    });
+  }
+
+  async function runSearch() {
+    if (!apiKey) { setError("Please enter your Apify API key first."); return; }
+    setLoading(true);
+    setError("");
+    setJobs([]);
+    setExpandedId(null);
+    setProgress(10);
+    setLoadingMsg("Starting search engine...");
+
+    try {
+      const query = ROLE_QUERIES[role] || role;
+      const locationQuery = location === "Remote" ? "remote" : location;
+
+      // Use Apify's Indeed scraper actor
+      const input = {
+        queries: `${query} visa sponsorship`,
+        location: locationQuery,
+        maxItems: maxJobs,
+        country: "US",
+        saveOnlyUniqueItems: true,
+        followApplyRedirects: false,
+      };
+
+      setLoadingMsg("Submitting job to Apify...");
+      setProgress(20);
+
+      const runRes = await startApifyRun(apiKey, "misceres~indeed-scraper", input);
+      const runId = runRes?.data?.id;
+      const datasetId = runRes?.data?.defaultDatasetId;
+
+      if (!runId) throw new Error("Failed to start Apify run. Check your API key.");
+
+      setLoadingMsg("Scraping Indeed for live jobs...");
+      setProgress(35);
+
+      // Poll for completion
+      let attempts = 0;
+      const maxAttempts = 40;
+      await new Promise((resolve, reject) => {
+        pollRef.current = setInterval(async () => {
+          attempts++;
+          const status = await pollRunStatus(apiKey, runId);
+          const st = status?.data?.status;
+          const pct = Math.min(35 + (attempts / maxAttempts) * 50, 85);
+          setProgress(Math.round(pct));
+          setLoadingMsg(`Searching live jobs... (${st || "running"})`);
+
+          if (st === "SUCCEEDED") {
+            clearInterval(pollRef.current);
+            resolve(datasetId);
+          } else if (st === "FAILED" || st === "ABORTED" || st === "TIMED-OUT") {
+            clearInterval(pollRef.current);
+            reject(new Error(`Run ${st}. Try again.`));
+          } else if (attempts >= maxAttempts) {
+            clearInterval(pollRef.current);
+            reject(new Error("Search timed out. Try fewer results or try again."));
+          }
+        }, 4000);
+      });
+
+      setLoadingMsg("Fetching results...");
+      setProgress(90);
+
+      const items = await getDataset(apiKey, datasetId, maxJobs);
+      const normalized = normalizeJobs(Array.isArray(items) ? items : []);
+      setJobs(normalized);
+      setProgress(100);
+      setLoadingMsg("Done!");
+
+    } catch (e) {
+      setError(e.message || "Search failed. Check your API key and try again.");
+    } finally {
+      setLoading(false);
+      setProgress(0);
+    }
+  }
+
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  const filteredJobs = useMemo(() => {
+    return jobs.filter(j => {
+      if (sponsorFilter === "yes") return j.sponsorship.verdict === "yes";
+      if (sponsorFilter === "no") return j.sponsorship.verdict === "no";
+      if (sponsorFilter === "unknown") return j.sponsorship.verdict === "unknown" || j.sponsorship.verdict === "mixed";
+      if (sponsorFilter === "db_strong") return j.sponsor?.tier === "Strong";
+      return true;
+    });
+  }, [jobs, sponsorFilter]);
+
+  const verdictLabel = v => ({ yes:"✅ Will Sponsor", no:"🚫 No Sponsorship", mixed:"⚠️ Mixed", unknown:"❓ Unknown" }[v] || "❓ Unknown");
+  const verdictClass = v => ({ yes:"spons-yes", no:"spons-no", mixed:"spons-mixed", unknown:"spons-unknown" }[v] || "spons-unknown");
+  const dbClass = t => ({ Strong:"db-strong", Moderate:"db-moderate", None:"db-none" }[t] || "db-unknown");
+
+  const sponsorCounts = useMemo(() => ({
+    yes: jobs.filter(j => j.sponsorship.verdict === "yes").length,
+    no: jobs.filter(j => j.sponsorship.verdict === "no").length,
+    db: jobs.filter(j => j.sponsor?.tier === "Strong").length,
+    total: jobs.length,
+  }), [jobs]);
+
+  return (
+    <>
+      <style>{css}</style>
+      <div className="root">
+        <header className="hdr">
+          <div className="hdr-logo">H1B<span>/</span>Navigator</div>
+          <div className="hdr-badge">LIVE JOB SEARCH</div>
+          <div className="hdr-badge" style={{borderColor:'#14532d',color:'#4ade80',background:'#052e16'}}>TPM · PM · AI GOV</div>
+          <div className="hdr-powered">Powered by Apify · Indeed · USCIS Data</div>
+        </header>
+
+        <div className="tabs">
+          <button className={`tab${tab==="search"?" active":""}`} onClick={()=>setTab("search")}>🔍 Live Job Search</button>
+          <button className={`tab${tab==="detector"?" active":""}`} onClick={()=>setTab("detector")}>📋 JD Sponsorship Detector</button>
+          <button className={`tab${tab==="tips"?" active":""}`} onClick={()=>setTab("tips")}>💡 H1B Strategy Guide</button>
+        </div>
+
+        <div className="body">
+          {/* ---- SEARCH TAB ---- */}
+          {tab === "search" && (
+            <>
+              {/* API KEY SETUP */}
+              <div className="setup-card">
+                <div className="setup-title">
+                  🔑 Apify API Key
+                  <span className={`key-status ${apiKeySaved && apiKey ? "key-ok" : "key-missing"}`}>
+                    {apiKeySaved && apiKey ? "Connected" : "Not set"}
+                  </span>
+                </div>
+                <div className="setup-desc">
+                  This tool uses Apify to scrape live Indeed job listings. Your API key is stored locally in your browser and never sent anywhere except Apify. Free tier gives ~$5/month of usage - more than enough for dozens of searches.
+                </div>
+                <div className="key-row">
+                  <input className="key-input" type="password" placeholder="apify_api_xxxxxxxxxxxx" value={apiKey} onChange={e=>setApiKey(e.target.value)}/>
+                  <button className="btn btn-primary" onClick={saveKey} disabled={!apiKey}>Save Key</button>
+                  {apiKeySaved && <button className="btn btn-secondary" onClick={clearKey}>Clear</button>}
+                </div>
+                {!apiKeySaved && (
+                  <div className="setup-steps">
+                    <div className="step">
+                      <div className="step-num">STEP 01</div>
+                      <div className="step-text">Go to <a href="https://apify.com" target="_blank" className="step-link">apify.com</a> and create a free account. No credit card required for free tier.</div>
+                    </div>
+                    <div className="step">
+                      <div className="step-num">STEP 02</div>
+                      <div className="step-text">Go to Settings → Integrations → API tokens. Click "Create new token" and copy it.</div>
+                    </div>
+                    <div className="step">
+                      <div className="step-num">STEP 03</div>
+                      <div className="step-text">Paste your token above and click Save. Your key stays in your browser only.</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* SEARCH FORM */}
+              <div className="search-card">
+                <div className="sec-label">Search Parameters</div>
+                <div className="form-grid">
+                  <div className="field">
+                    <div className="field-label">Role Type</div>
+                    <select className="field-input field-select" value={role} onChange={e=>setRole(e.target.value)}>
+                      {Object.keys(ROLE_QUERIES).map(r=><option key={r}>{r}</option>)}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <div className="field-label">Location</div>
+                    <select className="field-input field-select" value={location} onChange={e=>setLocation(e.target.value)}>
+                      {LOCATIONS.map(l=><option key={l}>{l}</option>)}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <div className="field-label">Max Results</div>
+                    <select className="field-input field-select" value={maxJobs} onChange={e=>setMaxJobs(Number(e.target.value))}>
+                      <option value={10}>10 jobs (faster)</option>
+                      <option value={20}>20 jobs</option>
+                      <option value={30}>30 jobs</option>
+                      <option value={50}>50 jobs (slower)</option>
+                    </select>
+                  </div>
+                  <button className="btn btn-primary" onClick={runSearch} disabled={loading || !apiKey}>
+                    {loading ? "Searching..." : "Search Jobs"}
+                  </button>
+                </div>
+                <div style={{fontSize:12,color:'#475569',marginTop:12,lineHeight:1.5}}>
+                  Search includes "visa sponsorship" as a keyword automatically. Results are pulled live from Indeed and analyzed for sponsorship signals.
+                </div>
+              </div>
+
+              {error && <div className="error-box">⚠️ {error}</div>}
+
+              {/* LOADING */}
+              {loading && (
+                <div className="loading-card">
+                  <div className="spinner"/>
+                  <div className="loading-title">{loadingMsg}</div>
+                  <div className="loading-sub">Scraping Indeed · Analyzing sponsorship signals · Checking USCIS database</div>
+                  <div className="progress-bar"><div className="progress-fill" style={{width:`${progress}%`}}/></div>
+                </div>
+              )}
+
+              {/* RESULTS */}
+              {!loading && jobs.length > 0 && (
+                <>
+                  <div className="filter-bar">
+                    <span style={{fontFamily:'Space Mono,monospace',fontSize:10,color:'#64748b',letterSpacing:'.1em',textTransform:'uppercase'}}>Filter:</span>
+                    <button className={`filter-chip${sponsorFilter==="all"?" active":""}`} onClick={()=>setSponsorFilter("all")}>All ({jobs.length})</button>
+                    <button className={`filter-chip${sponsorFilter==="yes"?" active-green":""}`} onClick={()=>setSponsorFilter("yes")}>✅ Sponsors ({sponsorCounts.yes})</button>
+                    <button className={`filter-chip${sponsorFilter==="no"?" active-red":""}`} onClick={()=>setSponsorFilter("no")}>🚫 No Sponsorship ({sponsorCounts.no})</button>
+                    <button className={`filter-chip${sponsorFilter==="unknown"?" active":""}`} onClick={()=>setSponsorFilter("unknown")}>❓ Unknown ({jobs.length - sponsorCounts.yes - sponsorCounts.no})</button>
+                    <button className={`filter-chip${sponsorFilter==="db_strong"?" active-green":""}`} onClick={()=>setSponsorFilter("db_strong")}>⭐ Known Sponsors DB ({sponsorCounts.db})</button>
+                    <span className="results-count">{filteredJobs.length} shown</span>
+                  </div>
+
+                  <div className="job-grid">
+                    {filteredJobs.map((job) => (
+                      <div key={job.id} className={`job-card${expandedId===job.id?" expanded":""}`} onClick={()=>setExpandedId(expandedId===job.id?null:job.id)}>
+                        <div className="jc-top">
+                          <div>
+                            <div className="jc-title">{job.title}</div>
+                            <div className="jc-company">{job.company}</div>
+                            <div className="jc-meta">
+                              {job.location && <span>📍 {job.location}</span>}
+                              {job.salary && <span>💰 {job.salary}</span>}
+                              {job.posted && <span>🕐 {job.posted}</span>}
+                            </div>
+                            {expandedId !== job.id && <div className="jc-snippet">{job.snippet}</div>}
+                            <div className="click-hint">→ Click to expand description & sponsorship analysis</div>
+                          </div>
+                          <div className="jc-badges">
+                            <span className={`sponsorship-badge ${verdictClass(job.sponsorship.verdict)}`}>{verdictLabel(job.sponsorship.verdict)}</span>
+                            {job.sponsor && (
+                              <span className={`db-badge ${dbClass(job.sponsor.tier)}`}>
+                                {job.sponsor.tier === "Strong" ? `⭐ ${job.sponsor.likelihood}% sponsor` :
+                                 job.sponsor.tier === "None" ? "🚫 Known non-sponsor" : `${job.sponsor.likelihood}% sponsor`}
+                              </span>
+                            )}
+                            {!job.sponsor && <span className="db-badge db-unknown">Not in DB</span>}
+                          </div>
+                        </div>
+
+                        {expandedId === job.id && (
+                          <div className="jc-expand" onClick={e=>e.stopPropagation()}>
+                            {(job.sponsorship.pos.length > 0 || job.sponsorship.neg.length > 0) && (
+                              <div style={{marginBottom:12}}>
+                                <div style={{fontFamily:'Space Mono,monospace',fontSize:10,color:'#64748b',letterSpacing:'.08em',textTransform:'uppercase',marginBottom:6}}>Sponsorship Signals Detected</div>
+                                <div className="signals-row">
+                                  {job.sponsorship.pos.map(p=><span key={p} className="signal-chip sig-pos">✓ "{p}"</span>)}
+                                  {job.sponsorship.neg.map(p=><span key={p} className="signal-chip sig-neg">✕ "{p}"</span>)}
+                                </div>
+                              </div>
+                            )}
+                            {job.description && (
+                              <div style={{marginBottom:14}}>
+                                <div style={{fontFamily:'Space Mono,monospace',fontSize:10,color:'#64748b',letterSpacing:'.08em',textTransform:'uppercase',marginBottom:6}}>Full Description</div>
+                                <div className="jc-desc">{job.description}</div>
+                              </div>
+                            )}
+                            <div className="apply-row">
+                              <a href={job.url} target="_blank" rel="noopener noreferrer" className="apply-btn">Apply on Indeed ↗</a>
+                              {job.sponsorship.verdict === "unknown" && (
+                                <div style={{fontSize:12,color:'#64748b',alignSelf:'center'}}>💡 No sponsorship info found - email recruiter to confirm before applying</div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {!loading && jobs.length === 0 && !error && (
+                <div className="empty">
+                  <div className="empty-icon">🔍</div>
+                  <div className="empty-title">Ready to Search</div>
+                  <div className="empty-sub">Add your Apify key, choose a role and location, and hit Search Jobs to pull live results from Indeed filtered for your target positions.</div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ---- JD DETECTOR ---- */}
+          {tab === "detector" && (
+            <>
+              <div className="sec-label">Sponsorship Signal Detector</div>
+              <div className="sec-sub">Paste any job description. The tool scans for positive and negative sponsorship language so you know before applying - no API key needed.</div>
+
+              <div className="detector-card">
+                <textarea className="detector-ta" placeholder="Paste the full job description here - include the requirements and qualifications section, that's where sponsorship language usually appears..." value={jdText} onChange={e=>{setJdText(e.target.value);setJdResult(null);}}/>
+                <div style={{display:'flex',gap:10,marginTop:12}}>
+                  <button className="btn btn-primary" disabled={!jdText.trim()} onClick={()=>setJdResult(analyzeSponsorship(jdText))}>Analyze</button>
+                  <button className="btn btn-secondary" onClick={()=>{setJdText("");setJdResult(null);}}>Clear</button>
+                </div>
+                {jdResult && (
+                  <div className={`result-banner res-${jdResult.verdict}`}>
+                    <div className="res-title">
+                      {jdResult.verdict==="yes"&&"✅ Positive Sponsorship Signals Found"}
+                      {jdResult.verdict==="no"&&"🚫 No Sponsorship - Skip This Role"}
+                      {jdResult.verdict==="mixed"&&"⚠️ Mixed Signals - Verify Before Applying"}
+                      {jdResult.verdict==="unknown"&&"❓ No Explicit Sponsorship Language"}
+                    </div>
+                    <div className="res-body">
+                      {jdResult.verdict==="yes"&&"This JD contains language suggesting the company will sponsor. Still verify directly with the recruiter before investing time."}
+                      {jdResult.verdict==="no"&&"This JD explicitly states no sponsorship or requires existing authorization. Move on - your time is better spent elsewhere."}
+                      {jdResult.verdict==="mixed"&&"Conflicting signals found. Read the qualifications section carefully and ask the recruiter directly in the first call."}
+                      {jdResult.verdict==="unknown"&&"No explicit sponsorship language either way. Check if the company is a known H1B sponsor using the USCIS database, or ask in the first recruiter call."}
+                      {jdResult.pos.length>0&&<div style={{marginTop:10}}><strong style={{color:'#10b981',fontSize:11,fontFamily:'Space Mono,monospace'}}>POSITIVE: </strong>{jdResult.pos.map(p=><span key={p} className="signal-chip sig-pos" style={{marginRight:4}}>"{p}"</span>)}</div>}
+                      {jdResult.neg.length>0&&<div style={{marginTop:8}}><strong style={{color:'#ef4444',fontSize:11,fontFamily:'Space Mono,monospace'}}>NEGATIVE: </strong>{jdResult.neg.map(p=><span key={p} className="signal-chip sig-neg" style={{marginRight:4}}>"{p}"</span>)}</div>}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="detector-card">
+                <div className="sec-label">What to Say to Recruiters</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                  {[
+                    ["JD is silent","'Before we go further - I'm on H1B and need sponsorship. Is that something your team supports for this role?'"],
+                    ["JD says no sponsorship","Skip it. Don't try to change their mind - it's a legal process decision, not personal."],
+                    ["JD says they sponsor","'Great - I saw sponsorship is available. I'd need an H1B transfer initially. Is that process straightforward for your team?'"],
+                    ["Reaching out on LinkedIn","'I noticed [Company] is a top H1B sponsor. Do you know if the [Role] team supports sponsorship? Happy to connect either way.'"],
+                  ].map(([title,text])=>(
+                    <div key={title} style={{background:'#080c14',borderRadius:6,padding:'12px 14px'}}>
+                      <div style={{fontFamily:'Space Mono,monospace',fontSize:10,color:'#38bdf8',letterSpacing:'.08em',textTransform:'uppercase',marginBottom:6}}>{title}</div>
+                      <div style={{fontSize:12,color:'#94a3b8',lineHeight:1.6,fontStyle:'italic'}}>"{text}"</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ---- TIPS TAB ---- */}
+          {tab === "tips" && (
+            <>
+              <div className="sec-label">H1B Job Search Strategy</div>
+              <div className="sec-sub">Tactical advice for TPM and PM roles specifically, from someone who knows the space. These aren't generic tips - they're specific to your background.</div>
+
+              <div className="tips-grid">
+                {[
+                  ["🎯","Target USCIS Top Sponsors First","Focus on companies with 500+ H1B petitions per year. They have dedicated immigration teams, established processes, and the search isn't a surprise to them. Google, Microsoft, Amazon, Deloitte, Accenture, TCS, Infosys are your highest-probability targets."],
+                  ["🏆","Your AI Governance Niche Is a Real Advantage","Most candidates can't claim AI governance expertise - you can, with working prototypes to prove it. Companies sponsoring for this specialty will move faster because the talent pool is genuinely small. Lead with it."],
+                  ["💼","Consulting Firms Are H1B-Friendly By Design","The Big 4 and major IT consultancies (Deloitte, Accenture, EY, Capgemini, Infosys, TCS) have sponsored thousands of H1Bs. They're a high-probability path and often place consultants with clients who then offer direct roles."],
+                  ["⏰","Timing Matters For New H1Bs, Not Transfers","H1B transfers don't require cap filing - you can move companies any time of year. Only new H1Bs need the April 1 lottery. This means you're not constrained by dates when switching employers."],
+                  ["🔍","Check USCIS Before Every Application","Go to the USCIS H1B Employer Data Hub before applying anywhere new. If a company has zero or very few filings, they almost certainly won't sponsor - regardless of what the recruiter says."],
+                  ["📋","Document Your Specialty Thoroughly","The more specialized and documented your skills, the stronger the case for sponsorship. Your governance prototypes, framework knowledge, and T-Mobile/EY experience make a compelling LCA case. Keep a skills inventory ready."],
+                  ["🤝","Ask in the First Recruiter Call","Don't wait until offer stage to raise sponsorship. Asking in the first call saves both sides time and signals you're organized. Recruiters at sponsor-friendly companies are used to the question."],
+                  ["📍","Seattle Is a Strong H1B Market","T-Mobile, Microsoft, Amazon, Boeing (limited), and a large consulting presence all make Seattle/Bellevue one of the stronger H1B markets in the US. Leverage local network connections where possible."],
+                  ["🌐","Remote Expands Your Options Significantly","Remote roles mean you can target SF, NYC, and Austin companies from Seattle without relocating. Filter for 'Remote' in your searches - many top H1B sponsors now offer remote TPM roles."],
+                ].map(([icon,title,text])=>(
+                  <div key={title} className="tip-card">
+                    <div className="tip-icon">{icon}</div>
+                    <div className="tip-title">{title}</div>
+                    <div className="tip-text">{text}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{background:'#0d1525',border:'1px solid #1a2840',borderRadius:10,padding:24,marginTop:20}}>
+                <div className="sec-label">Key Resources</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
+                  {[
+                    ["USCIS H1B Employer Data Hub","Official government database. Search any employer's H1B filing history.","https://www.uscis.gov/tools/reports-and-studies/h-1b-employer-data-hub"],
+                    ["MyVisaJobs.com","Aggregated H1B employer data with salary info and approval rates.","https://www.myvisajobs.com"],
+                    ["H1BGrader.com","H1B job listings filtered by visa sponsorship and salary data.","https://h1bgrader.com"],
+                    ["Levels.fyi","Tech compensation data with visa filter for TPM and PM roles.","https://www.levels.fyi"],
+                    ["LinkedIn Jobs (Visa Filter)","Use 'More Filters → Under-represented groups → Sponsor work visa'","https://www.linkedin.com/jobs"],
+                    ["Indeed (Sponsorship Search)","Search 'TPM visa sponsorship' or 'product manager will sponsor'","https://www.indeed.com"],
+                  ].map(([title,desc,url])=>(
+                    <div key={title} style={{background:'#080c14',borderRadius:6,padding:'14px'}}>
+                      <div style={{fontSize:13,fontWeight:700,color:'#f1f5f9',marginBottom:4}}>{title}</div>
+                      <div style={{fontSize:12,color:'#64748b',lineHeight:1.5,marginBottom:8}}>{desc}</div>
+                      <a href={url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:'#38bdf8',fontFamily:'Space Mono,monospace'}}>Open →</a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
