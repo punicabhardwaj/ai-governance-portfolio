@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AI/Gov · Vendor Risk Scorecard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #080c14; }
+    @media print {
+      .vrs-header, .demo-bar, .btn-row, .back-btn { display: none !important; }
+      body, .vrs-root { background: white !important; color: #0f172a !important; }
+      .vrs-body { padding: 20px !important; max-width: 100% !important; }
+      .card, .domain-card, .score-card { background: white !important; border-color: #cbd5e1 !important; }
+      .result-card { background: white !important; }
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState } = React;
+
+// ============================================================
+// VENDOR PRESETS
+// ============================================================
+const VENDORS = {
+  openai: {
+    name: "OpenAI (GPT-4o)",
+    type: "Foundation Model Provider",
+    use_case: "Customer-facing chatbot and content generation",
+    scores: {
+      model_transparency: { q1:3, q2:2, q3:3, q4:2 },
+      data_governance:    { q1:3, q2:3, q3:2, q4:2 },
+      security:           { q1:3, q2:3, q3:3, q4:2 },
+      regulatory:         { q1:3, q2:2, q3:2, q4:3 },
+      incident_response:  { q1:3, q2:2, q3:3, q4:2 },
+      contractual:        { q1:3, q2:3, q3:2, q4:2 },
+    }
+  },
+  smallvendor: {
+    name: "Acme AI (Startup)",
+    type: "Vertical AI Application",
+    use_case: "Automated HR screening tool",
+    scores: {
+      model_transparency: { q1:1, q2:0, q3:1, q4:0 },
+      data_governance:    { q1:1, q2:1, q3:0, q4:1 },
+      security:           { q1:2, q2:1, q3:1, q4:0 },
+      regulatory:         { q1:1, q2:0, q3:1, q4:0 },
+      incident_response:  { q1:1, q2:0, q3:1, q4:1 },
+      contractual:        { q1:2, q2:1, q3:1, q4:0 },
+    }
+  },
+  enterprise: {
+    name: "IBM Watson",
+    type: "Enterprise AI Platform",
+    use_case: "Internal process automation",
+    scores: {
+      model_transparency: { q1:3, q2:3, q3:3, q4:3 },
+      data_governance:    { q1:3, q2:3, q3:3, q4:3 },
+      security:           { q1:3, q2:3, q3:3, q4:3 },
+      regulatory:         { q1:3, q2:3, q3:3, q4:2 },
+      incident_response:  { q1:3, q2:3, q3:3, q4:3 },
+      contractual:        { q1:3, q2:3, q3:3, q4:3 },
+    }
+  }
+};
+
+// ============================================================
+// DOMAINS & QUESTIONS
+// ============================================================
+const DOMAINS = [
+  {
+    id: "model_transparency",
+    name: "Model Transparency",
+    weight: 20,
+    icon: "🔍",
+    description: "Vendor's ability to explain how their AI system works and what data it was trained on",
+    questions: [
+      { id:"q1", text:"Does the vendor publish model cards, datasheets, or system cards documenting model capabilities and limitations?" },
+      { id:"q2", text:"Can the vendor explain how the model makes decisions at a level sufficient for your compliance team?" },
+      { id:"q3", text:"Is the training data documented including sources, date ranges, and known biases?" },
+      { id:"q4", text:"Does the vendor provide audit logs or explainability tools for model outputs?" },
+    ]
+  },
+  {
+    id: "data_governance",
+    name: "Data Governance",
+    weight: 20,
+    icon: "🗄️",
+    description: "How the vendor handles your data, customer data, and data used to train or improve models",
+    questions: [
+      { id:"q1", text:"Does the vendor have a documented data retention and deletion policy?" },
+      { id:"q2", text:"Is customer data used to train or improve the vendor's models? If so, can you opt out?" },
+      { id:"q3", text:"Does the vendor have a data processing agreement (DPA) that covers GDPR, CCPA, or applicable regulations?" },
+      { id:"q4", text:"Are data residency requirements documented and contractually enforceable?" },
+    ]
+  },
+  {
+    id: "security",
+    name: "Security & Access Controls",
+    weight: 20,
+    icon: "🔒",
+    description: "Technical security posture of the vendor's AI systems and infrastructure",
+    questions: [
+      { id:"q1", text:"Does the vendor hold SOC 2 Type II, ISO 27001, or equivalent certification?" },
+      { id:"q2", text:"Are penetration testing results available under NDA?" },
+      { id:"q3", text:"Does the vendor support SSO, MFA, and role-based access controls?" },
+      { id:"q4", text:"Is there a documented vulnerability disclosure and patch management process?" },
+    ]
+  },
+  {
+    id: "regulatory",
+    name: "Regulatory Compliance",
+    weight: 20,
+    icon: "⚖️",
+    description: "Vendor's alignment with AI-specific and data regulations including EU AI Act and NIST AI RMF",
+    questions: [
+      { id:"q1", text:"Has the vendor assessed their product against the EU AI Act risk tiers?" },
+      { id:"q2", text:"Does the vendor have a published position on NIST AI RMF alignment?" },
+      { id:"q3", text:"Does the vendor support your obligations under sector-specific regulations (HIPAA, FCRA, EEOC)?" },
+      { id:"q4", text:"Is there a documented process for regulatory change management as AI laws evolve?" },
+    ]
+  },
+  {
+    id: "incident_response",
+    name: "Incident Response",
+    weight: 10,
+    icon: "🚨",
+    description: "Vendor's ability to detect, report, and respond to AI incidents, failures, or misuse",
+    questions: [
+      { id:"q1", text:"Does the vendor have a documented AI incident response plan?" },
+      { id:"q2", text:"What is the vendor's contractual SLA for notifying customers of security or AI incidents?" },
+      { id:"q3", text:"Does the vendor participate in AI incident databases or industry reporting?" },
+      { id:"q4", text:"Is there a process for customers to report harmful or unexpected model outputs?" },
+    ]
+  },
+  {
+    id: "contractual",
+    name: "Contractual Protections",
+    weight: 10,
+    icon: "📋",
+    description: "Legal and contractual safeguards for AI-specific risks in vendor agreements",
+    questions: [
+      { id:"q1", text:"Does the vendor's contract include AI-specific liability provisions?" },
+      { id:"q2", text:"Is there a clear IP ownership clause covering AI-generated outputs?" },
+      { id:"q3", text:"Does the contract include a right to audit the vendor's AI governance practices?" },
+      { id:"q4", text:"Are there contractual requirements for the vendor to notify you of material model changes?" },
+    ]
+  },
+];
+
+const OPTIONS = [
+  { value: 3, label: "Yes - fully documented", color: "#10b981" },
+  { value: 2, label: "Partially / in progress", color: "#eab308" },
+  { value: 1, label: "Minimal evidence", color: "#f97316" },
+  { value: 0, label: "No / unknown", color: "#ef4444" },
+];
+
+// ============================================================
+// SCORING ENGINE
+// ============================================================
+function computeScore(domainScores) {
+  const domainResults = DOMAINS.map(d => {
+    const qs = d.questions.map(q => domainScores[d.id]?.[q.id] ?? null);
+    const answered = qs.filter(v => v !== null);
+    const raw = answered.length > 0 ? answered.reduce((a,b)=>a+b,0) : 0;
+    const maxRaw = answered.length * 3;
+    const pct = maxRaw > 0 ? (raw / maxRaw) * 100 : 0;
+    return { ...d, raw, maxRaw, pct, answered: answered.length, scores: qs };
+  });
+
+  const totalWeighted = domainResults.reduce((sum, d) => sum + (d.pct * d.weight / 100), 0);
+  const maxPossible = domainResults.reduce((sum,d)=>sum+d.weight,0);
+  const overallPct = totalWeighted;
+
+  let tier, tierColor, recommendation;
+  if (overallPct >= 80) {
+    tier = "Low Risk - Approved"; tierColor = "#10b981";
+    recommendation = "Vendor meets governance standards. Proceed with standard contractual review and annual re-assessment.";
+  } else if (overallPct >= 60) {
+    tier = "Medium Risk - Conditional"; tierColor = "#eab308";
+    recommendation = "Vendor approved with conditions. Address gaps in underscoring domains before full deployment. Schedule 90-day follow-up review.";
+  } else if (overallPct >= 40) {
+    tier = "High Risk - Requires Remediation"; tierColor = "#f97316";
+    recommendation = "Significant governance gaps identified. Vendor must address flagged items before procurement can proceed. Escalate to legal and compliance.";
+  } else {
+    tier = "Critical Risk - Do Not Proceed"; tierColor = "#ef4444";
+    recommendation = "Vendor fails minimum governance thresholds. Do not proceed with procurement. Consider alternative vendors or require substantial remediation.";
+  }
+
+  // Gap analysis
+  const gaps = domainResults
+    .filter(d => d.pct < 67)
+    .map(d => `${d.name} (${Math.round(d.pct)}%) - requires attention`);
+
+  return { domainResults, overallPct: Math.round(overallPct), tier, tierColor, recommendation, gaps };
+}
+
+// ============================================================
+// CSS
+// ============================================================
+const css = `
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #080c14; }
+  .vrs-root { min-height:100vh; background:#080c14; color:#e2e8f4; font-family:'DM Sans',sans-serif; }
+  .vrs-header { border-bottom:1px solid #1a2235; padding:18px 36px; display:flex; align-items:center; gap:14px; background:#0a0f1c; }
+  .vrs-logo { font-family:'Space Mono',monospace; font-size:13px; font-weight:700; color:#38bdf8; letter-spacing:.12em; text-transform:uppercase; }
+  .vrs-logo span { color:#64748b; }
+  .vrs-badge { font-family:'Space Mono',monospace; font-size:10px; padding:3px 8px; border:1px solid #1e3a5f; border-radius:3px; color:#38bdf8; background:#0c1929; letter-spacing:.1em; }
+  .vrs-body { max-width:900px; margin:0 auto; padding:48px 24px 80px; }
+  .vrs-title { font-family:'Space Mono',monospace; font-size:22px; font-weight:700; color:#f1f5f9; margin-bottom:6px; }
+  .vrs-subtitle { font-size:14px; color:#64748b; margin-bottom:36px; line-height:1.5; max-width:640px; }
+  .sec-label { font-family:'Space Mono',monospace; font-size:10px; letter-spacing:.15em; color:#38bdf8; text-transform:uppercase; margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+  .sec-label::after { content:''; flex:1; height:1px; background:#1a2840; }
+  .card { background:#0d1525; border:1px solid #1a2840; border-radius:10px; padding:24px; margin-bottom:20px; }
+  .demo-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:16px; padding:12px 16px; background:#0a1525; border:1px dashed #1e3a5f; border-radius:8px; }
+  .demo-label { font-family:'Space Mono',monospace; font-size:10px; letter-spacing:.12em; color:#64748b; text-transform:uppercase; }
+  .demo-chip { background:#0d1525; border:1px solid #1e2d42; color:#94a3b8; padding:6px 12px; font-family:'DM Sans',sans-serif; font-size:12px; font-weight:500; border-radius:4px; cursor:pointer; transition:all .15s; }
+  .demo-chip:hover { border-color:#38bdf8; color:#38bdf8; background:#0c2034; }
+  .field-group { margin-bottom:16px; }
+  .field-label { font-size:13px; font-weight:500; color:#94a3b8; margin-bottom:8px; display:block; }
+  .field-input { width:100%; background:#080c14; border:1px solid #1e2d42; border-radius:6px; padding:10px 14px; font-family:'DM Sans',sans-serif; font-size:14px; color:#e2e8f4; outline:none; transition:border-color .2s; }
+  .field-input:focus { border-color:#38bdf8; }
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .domain-card { background:#0d1525; border:1px solid #1a2840; border-radius:10px; padding:22px; margin-bottom:16px; }
+  .domain-head { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+  .domain-icon { font-size:20px; }
+  .domain-name { font-size:16px; font-weight:700; color:#f1f5f9; }
+  .domain-weight { font-family:'Space Mono',monospace; font-size:10px; color:#38bdf8; padding:2px 8px; border:1px solid #1e3a5f; border-radius:3px; margin-left:auto; }
+  .domain-desc { font-size:12px; color:#64748b; margin-bottom:16px; line-height:1.5; }
+  .question-item { margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid #131c30; }
+  .question-item:last-child { border-bottom:none; margin-bottom:0; padding-bottom:0; }
+  .question-text { font-size:13px; color:#cbd5e1; margin-bottom:10px; line-height:1.5; }
+  .options-row { display:flex; gap:6px; flex-wrap:wrap; }
+  .opt-btn { padding:6px 12px; border-radius:4px; font-size:11px; font-weight:500; cursor:pointer; border:1px solid #1e2d42; background:#080c14; color:#64748b; transition:all .15s; font-family:'DM Sans',sans-serif; }
+  .opt-btn:hover { border-color:#334155; color:#94a3b8; }
+  .opt-btn.selected-3 { background:#052e16; border-color:#10b981; color:#10b981; }
+  .opt-btn.selected-2 { background:#2a1e06; border-color:#eab308; color:#eab308; }
+  .opt-btn.selected-1 { background:#2d1a0a; border-color:#f97316; color:#f97316; }
+  .opt-btn.selected-0 { background:#2d0a0a; border-color:#ef4444; color:#ef4444; }
+  .btn { padding:11px 28px; border-radius:6px; font-family:'DM Sans',sans-serif; font-size:14px; font-weight:600; cursor:pointer; border:none; transition:all .2s; }
+  .btn-primary { background:#38bdf8; color:#080c14; }
+  .btn-primary:hover { background:#7dd3fc; }
+  .btn-primary:disabled { background:#1e3a52; color:#475569; cursor:not-allowed; }
+  .btn-secondary { background:transparent; color:#64748b; border:1px solid #1e2d42; }
+  .btn-secondary:hover { border-color:#334155; color:#94a3b8; }
+  .btn-download { background:#0d1525; color:#38bdf8; border:1px solid #38bdf8; }
+  .btn-download:hover { background:#0c2034; }
+  .btn-row { display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
+  .progress-mini { height:4px; background:#1e2d42; border-radius:2px; margin-top:6px; overflow:hidden; }
+  .progress-mini-fill { height:100%; border-radius:2px; transition:width .4s ease; }
+  /* RESULTS */
+  .score-hero { text-align:center; padding:36px 24px; background:#080c14; border:1px solid #1a2840; border-radius:10px; margin-bottom:24px; }
+  .score-number { font-family:'Space Mono',monospace; font-size:64px; font-weight:700; line-height:1; margin-bottom:8px; }
+  .score-label { font-family:'Space Mono',monospace; font-size:11px; color:#64748b; letter-spacing:.12em; text-transform:uppercase; margin-bottom:16px; }
+  .tier-badge { display:inline-block; font-family:'Space Mono',monospace; font-size:12px; font-weight:700; padding:8px 20px; border-radius:4px; letter-spacing:.08em; text-transform:uppercase; margin-bottom:12px; }
+  .recommendation-text { font-size:13px; color:#94a3b8; max-width:520px; margin:0 auto; line-height:1.6; }
+  .domain-result-grid { display:grid; gap:12px; margin-bottom:24px; }
+  .domain-result-card { background:#0d1525; border:1px solid #1a2840; border-radius:8px; padding:16px 18px; }
+  .domain-result-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .domain-result-name { font-size:14px; font-weight:600; color:#f1f5f9; flex:1; }
+  .domain-pct { font-family:'Space Mono',monospace; font-size:14px; font-weight:700; }
+  .bar-bg { height:6px; background:#1e2d42; border-radius:3px; overflow:hidden; margin-bottom:8px; }
+  .bar-fill { height:100%; border-radius:3px; transition:width .6s ease; }
+  .domain-answers { display:flex; gap:4px; flex-wrap:wrap; }
+  .ans-dot { width:10px; height:10px; border-radius:50%; }
+  .gap-list { display:flex; flex-direction:column; gap:8px; }
+  .gap-item { display:flex; gap:10px; align-items:flex-start; font-size:13px; color:#94a3b8; }
+  .gap-dot { width:6px; height:6px; background:#f97316; border-radius:50%; margin-top:6px; flex-shrink:0; }
+  .nist-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .nist-card { background:#080c14; border:1px solid #1a2840; border-radius:8px; padding:14px; }
+  .nist-id { font-family:'Space Mono',monospace; font-size:10px; color:#38bdf8; letter-spacing:.08em; margin-bottom:4px; }
+  .nist-text { font-size:12px; color:#64748b; line-height:1.5; }
+  ::-webkit-scrollbar { width:8px; } ::-webkit-scrollbar-track { background:#0a0f1c; } ::-webkit-scrollbar-thumb { background:#1e2d42; border-radius:4px; }
+  @media(max-width:700px){
+    .two-col{grid-template-columns:1fr}
+    .nist-grid{grid-template-columns:1fr}
+    .vrs-body{padding:24px 16px 60px}
+    .score-number{font-size:48px}
+    .options-row{flex-direction:column}
+  }
+`;
+
+// ============================================================
+// COMPONENTS
+// ============================================================
+function DomainCard({ domain, scores, onScore }) {
+  const answered = domain.questions.filter(q => scores[domain.id]?.[q.id] !== undefined).length;
+  const total = domain.questions.length;
+  const pct = answered / total;
+
+  return (
+    <div className="domain-card">
+      <div className="domain-head">
+        <span className="domain-icon">{domain.icon}</span>
+        <span className="domain-name">{domain.name}</span>
+        <span className="domain-weight">{domain.weight}% weight</span>
+      </div>
+      <div className="domain-desc">{domain.description}</div>
+
+      {domain.questions.map(q => {
+        const val = scores[domain.id]?.[q.id];
+        return (
+          <div key={q.id} className="question-item">
+            <div className="question-text">{q.text}</div>
+            <div className="options-row">
+              {OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  className={`opt-btn${val===opt.value?` selected-${opt.value}`:""}`}
+                  onClick={() => onScore(domain.id, q.id, opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+
+      <div className="progress-mini">
+        <div className="progress-mini-fill" style={{ width:`${pct*100}%`, background: pct===1?"#10b981":"#38bdf8" }}/>
+      </div>
+      <div style={{fontSize:11,color:'#475569',marginTop:4,fontFamily:'Space Mono,monospace'}}>{answered}/{total} ANSWERED</div>
+    </div>
+  );
+}
+
+function Results({ result, vendorName, vendorType, useCase, onReset }) {
+  const { domainResults, overallPct, tier, tierColor, recommendation, gaps } = result;
+
+  const barColor = d => d.pct >= 80 ? "#10b981" : d.pct >= 60 ? "#eab308" : d.pct >= 40 ? "#f97316" : "#ef4444";
+  const dotColor = v => v===3?"#10b981":v===2?"#eab308":v===1?"#f97316":"#ef4444";
+
+  return (
+    <div>
+      <div className="score-hero">
+        <div className="score-label">Overall Vendor Risk Score</div>
+        <div className="score-number" style={{color:tierColor}}>{overallPct}<span style={{fontSize:28,color:'#64748b'}}>/100</span></div>
+        <div className="tier-badge" style={{background:`${tierColor}20`,border:`1px solid ${tierColor}`,color:tierColor}}>{tier}</div>
+        <div style={{fontSize:13,color:'#64748b',marginBottom:8}}>{vendorName} · {vendorType}</div>
+        <div className="recommendation-text">{recommendation}</div>
+      </div>
+
+      <div className="card" style={{marginBottom:20}}>
+        <div className="sec-label">Vendor Details</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'12px 24px'}}>
+          {[["Vendor",vendorName],["Type",vendorType],["Use Case",useCase]].map(([k,v])=>(
+            <div key={k}>
+              <div style={{fontFamily:'Space Mono,monospace',fontSize:10,color:'#64748b',letterSpacing:'.08em',textTransform:'uppercase',marginBottom:3}}>{k}</div>
+              <div style={{fontSize:13,color:'#cbd5e1'}}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="sec-label">Domain Scores</div>
+      <div className="domain-result-grid" style={{marginBottom:24}}>
+        {domainResults.map(d => (
+          <div key={d.id} className="domain-result-card">
+            <div className="domain-result-head">
+              <span style={{fontSize:16}}>{d.icon}</span>
+              <span className="domain-result-name">{d.name}</span>
+              <span className="domain-pct" style={{color:barColor(d)}}>{Math.round(d.pct)}%</span>
+              <span style={{fontFamily:'Space Mono,monospace',fontSize:10,color:'#475569',marginLeft:4}}>(weight: {d.weight}%)</span>
+            </div>
+            <div className="bar-bg">
+              <div className="bar-fill" style={{width:`${d.pct}%`,background:barColor(d)}}/>
+            </div>
+            <div className="domain-answers">
+              {d.scores.map((s,i) => (
+                <div key={i} className="ans-dot" style={{background:s!==null?dotColor(s):"#1e2d42"}} title={OPTIONS.find(o=>o.value===s)?.label||"Not answered"}/>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {gaps.length > 0 && (
+        <div className="card" style={{marginBottom:20}}>
+          <div className="sec-label">Gap Analysis</div>
+          <div className="gap-list">
+            {gaps.map((g,i)=>(
+              <div key={i} className="gap-item"><span className="gap-dot"/>{g}</div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="card" style={{marginBottom:20}}>
+        <div className="sec-label">NIST AI RMF · Govern Function Mapping</div>
+        <div className="nist-grid">
+          <div className="nist-card">
+            <div className="nist-id">GOVERN 1.1</div>
+            <div className="nist-text">Third-party AI policies and expectations are documented. Vendor assessed against organizational risk tolerance.</div>
+          </div>
+          <div className="nist-card">
+            <div className="nist-id">GOVERN 1.4</div>
+            <div className="nist-text">Organizational roles and responsibilities for AI risk management are defined, including vendor oversight.</div>
+          </div>
+          <div className="nist-card">
+            <div className="nist-id">GOVERN 6.1</div>
+            <div className="nist-text">AI risks from third-party relationships are identified, assessed, and monitored through structured vendor review.</div>
+          </div>
+          <div className="nist-card">
+            <div className="nist-id">GOVERN 6.2</div>
+            <div className="nist-text">Contractual protections and audit rights are assessed for their adequacy in managing third-party AI risk.</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="btn-row">
+        <button className="btn btn-download" onClick={()=>window.print()}>↓ Download Scorecard (PDF)</button>
+        <button className="btn btn-secondary" onClick={onReset}>Assess Another Vendor</button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// MAIN APP
+// ============================================================
+function App() {
+  const [mode, setMode] = useState("form");
+  const [vendorName, setVendorName] = useState("");
+  const [vendorType, setVendorType] = useState("");
+  const [useCase, setUseCase] = useState("");
+  const [scores, setScores] = useState({});
+  const [result, setResult] = useState(null);
+
+  const handleScore = (domainId, questionId, value) => {
+    setScores(s => ({ ...s, [domainId]: { ...s[domainId], [questionId]: value } }));
+  };
+
+  const loadPreset = (key) => {
+    const v = VENDORS[key];
+    setVendorName(v.name);
+    setVendorType(v.type);
+    setUseCase(v.use_case);
+    setScores(v.scores);
+  };
+
+  const totalQs = DOMAINS.reduce((s,d)=>s+d.questions.length,0);
+  const answeredQs = DOMAINS.reduce((s,d)=>s+d.questions.filter(q=>scores[d.id]?.[q.id]!==undefined).length,0);
+  const canSubmit = vendorName && vendorType && useCase && answeredQs === totalQs;
+  const progressPct = Math.round((answeredQs / totalQs) * 100);
+
+  const runScorecard = () => {
+    const r = computeScore(scores);
+    setResult(r);
+    setMode("results");
+  };
+
+  const reset = () => {
+    setMode("form"); setVendorName(""); setVendorType(""); setUseCase(""); setScores({}); setResult(null);
+  };
+
+  return (
+    <>
+      <style>{css}</style>
+      <div className="vrs-root">
+        <header className="vrs-header">
+          <div className="vrs-logo">AI<span>/</span>Gov · Vendor Risk</div>
+          <div className="vrs-badge">PROTOTYPE v0.1</div>
+        </header>
+
+        <div className="vrs-body">
+          <div className="vrs-title">AI Vendor Risk Scorecard</div>
+          <div className="vrs-subtitle">
+            Assess third-party AI vendors against six governance domains: model transparency, data governance, security, regulatory compliance, incident response, and contractual protections. Mapped to NIST AI RMF Govern function.
+          </div>
+
+          {mode === "form" && (
+            <>
+              <div className="demo-bar">
+                <span className="demo-label">Quick Demo:</span>
+                <button className="demo-chip" onClick={()=>loadPreset("openai")}>OpenAI · Medium Risk</button>
+                <button className="demo-chip" onClick={()=>loadPreset("smallvendor")}>Acme AI Startup · High Risk</button>
+                <button className="demo-chip" onClick={()=>loadPreset("enterprise")}>IBM Watson · Low Risk</button>
+              </div>
+
+              <div className="card">
+                <div className="sec-label">Vendor Information</div>
+                <div className="two-col">
+                  <div className="field-group">
+                    <label className="field-label">Vendor Name</label>
+                    <input className="field-input" placeholder="e.g. OpenAI, Salesforce Einstein, Workday AI" value={vendorName} onChange={e=>setVendorName(e.target.value)}/>
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label">Vendor Type</label>
+                    <input className="field-input" placeholder="e.g. Foundation Model Provider, SaaS AI Application" value={vendorType} onChange={e=>setVendorType(e.target.value)}/>
+                  </div>
+                </div>
+                <div className="field-group">
+                  <label className="field-label">Intended Use Case</label>
+                  <input className="field-input" placeholder="e.g. Customer-facing chatbot, Internal HR automation, Credit decisioning" value={useCase} onChange={e=>setUseCase(e.target.value)}/>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:10,marginTop:4}}>
+                  <div style={{flex:1,height:4,background:'#1e2d42',borderRadius:2,overflow:'hidden'}}>
+                    <div style={{height:'100%',background:progressPct===100?"#10b981":"#38bdf8",width:`${progressPct}%`,borderRadius:2,transition:'width .3s'}}/>
+                  </div>
+                  <div style={{fontFamily:'Space Mono,monospace',fontSize:10,color:'#475569',whiteSpace:'nowrap'}}>{answeredQs}/{totalQs} QUESTIONS</div>
+                </div>
+              </div>
+
+              {DOMAINS.map(d => (
+                <DomainCard key={d.id} domain={d} scores={scores} onScore={handleScore}/>
+              ))}
+
+              <div className="btn-row">
+                <button className="btn btn-primary" onClick={runScorecard} disabled={!canSubmit}>
+                  {canSubmit ? "Generate Scorecard" : `Answer all ${totalQs - answeredQs} remaining questions`}
+                </button>
+              </div>
+            </>
+          )}
+
+          {mode === "results" && result && (
+            <Results result={result} vendorName={vendorName} vendorType={vendorType} useCase={useCase} onReset={reset}/>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
