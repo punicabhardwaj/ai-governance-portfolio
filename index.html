@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>AI Governance Portfolio</title>
+  <title>Punica Bhardwaj · AI Governance Portfolio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
   <style>
@@ -11,7 +11,6 @@
     body { background: #080c14; color: #e2e8f4; font-family: 'DM Sans', sans-serif; line-height: 1.6; }
     a { color: inherit; text-decoration: none; }
 
-    /* NAV */
     nav { position: sticky; top: 0; z-index: 50; background: #0a0f1cee; backdrop-filter: blur(12px); border-bottom: 1px solid #1a2235; padding: 16px 48px; display: flex; align-items: center; justify-content: space-between; }
     .nav-logo { font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; color: #38bdf8; letter-spacing: .12em; text-transform: uppercase; }
     .nav-logo span { color: #64748b; }
@@ -19,31 +18,46 @@
     .nav-links a { font-size: 13px; color: #64748b; font-weight: 500; transition: color .15s; }
     .nav-links a:hover { color: #e2e8f4; }
 
-    /* HERO */
-    .hero { max-width: 900px; margin: 0 auto; padding: 100px 48px 80px; }
+    .hero { max-width: 960px; margin: 0 auto; padding: 100px 48px 80px; }
     .hero-tag { font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: .18em; color: #38bdf8; text-transform: uppercase; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
     .hero-tag::before { content: ''; width: 32px; height: 1px; background: #38bdf8; }
-    .hero-name { font-family: 'Space Mono', monospace; font-size: 42px; font-weight: 700; color: #f1f5f9; line-height: 1.15; margin-bottom: 16px; }
+    .hero-name { font-family: 'Space Mono', monospace; font-size: 44px; font-weight: 700; color: #f1f5f9; line-height: 1.15; margin-bottom: 16px; }
     .hero-name span { color: #38bdf8; }
-    .hero-title { font-size: 18px; color: #94a3b8; margin-bottom: 24px; font-weight: 400; }
-    .hero-desc { font-size: 15px; color: #64748b; max-width: 620px; line-height: 1.7; margin-bottom: 36px; }
+    .hero-title { font-size: 18px; color: #94a3b8; margin-bottom: 28px; font-weight: 400; }
+    .hero-desc { font-size: 15px; color: #64748b; max-width: 680px; line-height: 1.8; margin-bottom: 36px; }
+    .hero-desc strong { color: #94a3b8; font-weight: 600; }
     .hero-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 40px; }
     .badge { font-family: 'Space Mono', monospace; font-size: 10px; padding: 5px 12px; border-radius: 3px; letter-spacing: .08em; border: 1px solid #1e3a5f; color: #38bdf8; background: #0c1929; }
+    .badge-cert { border-color: #2d3a5f; color: #94a3b8; background: #0d1525; }
     .hero-cta { display: flex; gap: 12px; flex-wrap: wrap; }
     .btn-primary { padding: 12px 28px; background: #38bdf8; color: #080c14; border-radius: 6px; font-weight: 700; font-size: 14px; transition: all .2s; cursor: pointer; border: none; display: inline-block; }
     .btn-primary:hover { background: #7dd3fc; }
     .btn-outline { padding: 12px 28px; background: transparent; color: #94a3b8; border-radius: 6px; font-weight: 600; font-size: 14px; border: 1px solid #1e2d42; transition: all .2s; display: inline-block; }
     .btn-outline:hover { border-color: #38bdf8; color: #38bdf8; }
 
-    /* DIVIDER */
     .divider { height: 1px; background: linear-gradient(90deg, transparent, #1a2840, transparent); margin: 0 48px; }
+
+    /* ABOUT */
+    .about { max-width: 1100px; margin: 0 auto; padding: 80px 48px; }
+    .about-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
+    .about-left {}
+    .about-right {}
+    .section-tag { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: .18em; color: #38bdf8; text-transform: uppercase; margin-bottom: 10px; }
+    .section-title { font-family: 'Space Mono', monospace; font-size: 24px; font-weight: 700; color: #f1f5f9; margin-bottom: 16px; }
+    .section-sub { font-size: 14px; color: #64748b; line-height: 1.7; margin-bottom: 20px; }
+    .exp-item { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #131c30; }
+    .exp-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .exp-role { font-size: 14px; font-weight: 600; color: #f1f5f9; margin-bottom: 2px; }
+    .exp-company { font-family: 'Space Mono', monospace; font-size: 11px; color: #38bdf8; letter-spacing: .06em; margin-bottom: 4px; }
+    .exp-desc { font-size: 12px; color: #64748b; line-height: 1.6; }
+    .certs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+    .cert-card { background: #0d1525; border: 1px solid #1a2840; border-radius: 6px; padding: 12px 14px; }
+    .cert-name { font-size: 12px; font-weight: 600; color: #cbd5e1; margin-bottom: 2px; }
+    .cert-body { font-size: 11px; color: #475569; }
 
     /* SECTIONS */
     .section { max-width: 1100px; margin: 0 auto; padding: 80px 48px; }
     .section-header { margin-bottom: 40px; }
-    .section-tag { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: .18em; color: #38bdf8; text-transform: uppercase; margin-bottom: 10px; }
-    .section-title { font-family: 'Space Mono', monospace; font-size: 24px; font-weight: 700; color: #f1f5f9; margin-bottom: 10px; }
-    .section-sub { font-size: 14px; color: #64748b; max-width: 580px; line-height: 1.6; }
 
     /* PROTOTYPE CARDS */
     .proto-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
@@ -53,24 +67,22 @@
     .proto-number { font-family: 'Space Mono', monospace; font-size: 11px; color: #334155; letter-spacing: .1em; }
     .proto-status { font-family: 'Space Mono', monospace; font-size: 10px; padding: 3px 8px; border-radius: 3px; letter-spacing: .06em; }
     .status-live { background: #052e16; color: #4ade80; border: 1px solid #14532d; }
-    .status-soon { background: #1e2d42; color: #64748b; border: 1px solid #334155; }
     .proto-name { font-size: 18px; font-weight: 700; color: #f1f5f9; margin-bottom: 8px; }
     .proto-desc { font-size: 13px; color: #94a3b8; line-height: 1.6; margin-bottom: 18px; flex: 1; }
     .proto-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
     .proto-tag { font-family: 'Space Mono', monospace; font-size: 10px; padding: 3px 8px; border-radius: 3px; background: #080c14; color: #64748b; border: 1px solid #1a2840; }
     .proto-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #38bdf8; transition: gap .15s; }
     .proto-link:hover { gap: 10px; }
-    .proto-link-disabled { color: #334155; cursor: not-allowed; }
 
     /* PRODUCT CARDS */
     .product-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
-    .product-card { background: #0d1525; border: 1px solid #1a2840; border-radius: 10px; padding: 24px; transition: all .2s; opacity: .6; position: relative; overflow: hidden; }
-    .product-card::before { content: 'COMING SOON'; position: absolute; top: 12px; right: -22px; background: #1e2d42; color: #475569; font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: .1em; padding: 4px 32px; transform: rotate(35deg); }
+    .product-card { background: #0d1525; border: 1px solid #1a2840; border-radius: 10px; padding: 24px; transition: all .2s; opacity: .55; position: relative; overflow: hidden; }
+    .product-card::before { content: 'COMING SOON'; position: absolute; top: 14px; right: -24px; background: #1e2d42; color: #475569; font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: .1em; padding: 4px 36px; transform: rotate(35deg); }
     .product-card.live { opacity: 1; }
     .product-card.live::before { display: none; }
     .product-card.live:hover { border-color: #6366f1; transform: translateY(-2px); box-shadow: 0 8px 32px #6366f114; }
     .product-icon { font-size: 28px; margin-bottom: 12px; }
-    .product-name { font-size: 16px; font-weight: 700; color: #f1f5f9; margin-bottom: 6px; }
+    .product-name { font-size: 15px; font-weight: 700; color: #f1f5f9; margin-bottom: 6px; }
     .product-desc { font-size: 12px; color: #64748b; line-height: 1.5; }
 
     /* FRAMEWORKS */
@@ -80,14 +92,22 @@
     .fw-card { background: #0d1525; border: 1px solid #1a2840; border-radius: 8px; padding: 18px; }
     .fw-name { font-family: 'Space Mono', monospace; font-size: 11px; color: #38bdf8; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 8px; }
     .fw-desc { font-size: 12px; color: #64748b; line-height: 1.5; }
+    .fw-tag { display: inline-block; font-family: 'Space Mono', monospace; font-size: 9px; padding: 2px 6px; border-radius: 2px; background: #0c1929; color: #38bdf8; border: 1px solid #1e3a5f; margin-top: 8px; margin-right: 4px; }
+
+    /* PHILOSOPHY STRIP */
+    .philosophy { background: linear-gradient(135deg, #0c1929 0%, #0d1525 100%); border-top: 1px solid #1a2235; border-bottom: 1px solid #1a2235; padding: 60px 48px; }
+    .philosophy-inner { max-width: 1100px; margin: 0 auto; display: grid; grid-template-columns: repeat(3,1fr); gap: 32px; }
+    .phil-item { text-align: center; padding: 0 16px; }
+    .phil-icon { font-size: 28px; margin-bottom: 12px; }
+    .phil-title { font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; color: #38bdf8; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 10px; }
+    .phil-text { font-size: 13px; color: #64748b; line-height: 1.7; }
 
     /* CONTACT */
     .contact { max-width: 900px; margin: 0 auto; padding: 80px 48px; text-align: center; }
     .contact-title { font-family: 'Space Mono', monospace; font-size: 28px; font-weight: 700; color: #f1f5f9; margin-bottom: 14px; }
-    .contact-sub { font-size: 15px; color: #64748b; margin-bottom: 36px; max-width: 500px; margin-left: auto; margin-right: auto; }
+    .contact-sub { font-size: 15px; color: #64748b; margin-bottom: 36px; max-width: 520px; margin-left: auto; margin-right: auto; line-height: 1.7; }
     .contact-links { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
 
-    /* FOOTER */
     footer { border-top: 1px solid #1a2235; padding: 24px 48px; display: flex; justify-content: space-between; align-items: center; }
     .footer-text { font-family: 'Space Mono', monospace; font-size: 11px; color: #334155; letter-spacing: .06em; }
 
@@ -96,26 +116,30 @@
       .nav-links { display: none; }
       .hero { padding: 60px 20px 50px; }
       .hero-name { font-size: 28px; }
+      .about { padding: 60px 20px; }
+      .about-grid { grid-template-columns: 1fr; gap: 32px; }
       .section { padding: 60px 20px; }
       .proto-grid { grid-template-columns: 1fr; }
       .product-grid { grid-template-columns: 1fr 1fr; }
       .fw-grid { grid-template-columns: 1fr 1fr; }
+      .philosophy-inner { grid-template-columns: 1fr; gap: 24px; }
       .divider { margin: 0 20px; }
       footer { padding: 20px; flex-direction: column; gap: 8px; text-align: center; }
     }
-
     @media(max-width: 560px) {
       .product-grid { grid-template-columns: 1fr; }
       .fw-grid { grid-template-columns: 1fr; }
+      .certs-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
 
 <nav>
-  <div class="nav-logo">AI<span>/</span>Gov Portfolio</div>
+  <div class="nav-logo">Punica<span>/</span>Bhardwaj</div>
   <div class="nav-links">
-    <a href="#governance">Governance</a>
+    <a href="#about">About</a>
+    <a href="#governance">Governance Tools</a>
     <a href="#products">AI Products</a>
     <a href="#frameworks">Frameworks</a>
     <a href="#contact">Contact</a>
@@ -124,25 +148,113 @@
 
 <!-- HERO -->
 <section class="hero">
-  <div class="hero-tag">AI Governance · Technical Product Management</div>
-  <div class="hero-name">Governed AI,<br/><span>Built to Show.</span></div>
-  <div class="hero-title">AI Governance Lead · Technical PM · 12 Years in Tech</div>
+  <div class="hero-tag">Technical Product Management · Data Governance · AI</div>
+  <div class="hero-name">AI that organizations<br/>can actually <span>trust.</span></div>
+  <div class="hero-title">Punica Bhardwaj · TPM · 12+ Years</div>
   <div class="hero-desc">
-    This portfolio demonstrates AI governance thinking through working prototypes - not slide decks.
-    Each tool is mapped to a real framework, built with auditable logic, and ready to discuss with any hiring manager or regulator.
+    I believe <strong>ungoverned AI isn't a product - it's a liability.</strong> With 12+ years spanning technical product management, data governance, and program management at companies like T-Mobile and EY, I build AI systems that are transparent, auditable, and designed to earn trust from day one. Privacy and security aren't constraints I work around - they're the foundation I build on.
+    <br/><br/>
+    This portfolio is working proof of that thinking. Every tool here is mapped to a real regulatory framework, built with auditable logic, and ready to hold up under scrutiny.
   </div>
   <div class="hero-badges">
     <span class="badge">NIST AI RMF</span>
     <span class="badge">EU AI Act</span>
     <span class="badge">ISO/IEC 42001</span>
-    <span class="badge">Singapore Agentic AI Framework</span>
-    <span class="badge">CSPO</span>
-    <span class="badge">SAFe Scrum Master</span>
-    <span class="badge">Databricks Data Engineer</span>
+    <span class="badge">Singapore Agentic AI</span>
+    <span class="badge">Apache Atlas</span>
+    <span class="badge">Alation</span>
+    <span class="badge badge-cert">CSPO</span>
+    <span class="badge badge-cert">SAFe Scrum Master</span>
+    <span class="badge badge-cert">Databricks Data Engineer</span>
   </div>
   <div class="hero-cta">
-    <a href="#governance" class="btn-primary">View Prototypes</a>
-    <a href="#contact" class="btn-outline">Get in Touch</a>
+    <a href="#governance" class="btn-primary">See the Tools</a>
+    <a href="#about" class="btn-outline">About Me</a>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- PHILOSOPHY STRIP -->
+<div class="philosophy">
+  <div class="philosophy-inner">
+    <div class="phil-item">
+      <div class="phil-icon">🔒</div>
+      <div class="phil-title">Governance First</div>
+      <div class="phil-text">AI products without governance structures aren't finished products - they're future incidents waiting to happen. I design governance in from the first sprint, not the last.</div>
+    </div>
+    <div class="phil-item">
+      <div class="phil-icon">📐</div>
+      <div class="phil-title">Auditable by Design</div>
+      <div class="phil-text">Every decision a model makes should be traceable. I build systems where risk classification, fairness assessments, and vendor evaluations produce defensible, documented outputs - not black boxes.</div>
+    </div>
+    <div class="phil-item">
+      <div class="phil-icon">🤝</div>
+      <div class="phil-title">Trust is the Product</div>
+      <div class="phil-text">The organizations that will win with AI are the ones that earn trust early - with regulators, with customers, with employees. Governance isn't overhead. It's competitive advantage.</div>
+    </div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ABOUT -->
+<section class="about" id="about">
+  <div class="about-grid">
+    <div class="about-left">
+      <div class="section-tag">Background</div>
+      <div class="section-title">12+ Years Building<br/>Products That Last</div>
+      <div class="section-sub">
+        My career sits at the intersection of technology, data, and governance. I've led product and program initiatives across telecom, consulting, and enterprise data - always with a focus on building systems that are reliable, compliant, and trusted by the teams that depend on them.
+      </div>
+      <div class="section-sub">
+        My foundation is in data governance and information assurance, which shapes how I approach AI: with rigor, with documentation, and with a clear understanding of what happens when things go wrong.
+      </div>
+
+      <div class="exp-item">
+        <div class="exp-role">Manager, Technical Product Management</div>
+        <div class="exp-company">T-Mobile · Bellevue, WA</div>
+        <div class="exp-desc">Led technical product initiatives across data and AI domains at scale. Drove platform decisions balancing speed, compliance, and enterprise governance requirements.</div>
+      </div>
+      <div class="exp-item">
+        <div class="exp-role">Technology Consultant / Manager</div>
+        <div class="exp-company">EY US LLP · Seattle, WA</div>
+        <div class="exp-desc">Delivered technology consulting engagements with a focus on data governance, program management, and risk. Worked across regulated industries where accountability and documentation aren't optional.</div>
+      </div>
+    </div>
+
+    <div class="about-right">
+      <div class="section-tag">Education & Credentials</div>
+      <div class="section-title">The Foundation</div>
+      <div class="section-sub">My academic background in information assurance and computer engineering gives me the technical depth to understand AI systems - and the governance vocabulary to make them accountable.</div>
+
+      <div class="certs-grid">
+        <div class="cert-card">
+          <div class="cert-name">M.S. Information Assurance & Cyber Security</div>
+          <div class="cert-body">Graduate degree focused on security architecture, risk management, and data protection</div>
+        </div>
+        <div class="cert-card">
+          <div class="cert-name">B.Tech Computer Engineering</div>
+          <div class="cert-body">Technical foundation in systems, software, and computer science fundamentals</div>
+        </div>
+        <div class="cert-card">
+          <div class="cert-name">CSPO</div>
+          <div class="cert-body">Certified Scrum Product Owner - product lifecycle and stakeholder alignment</div>
+        </div>
+        <div class="cert-card">
+          <div class="cert-name">SAFe Certified Scrum Master</div>
+          <div class="cert-body">Scaled Agile Framework delivery across large enterprise programs</div>
+        </div>
+        <div class="cert-card">
+          <div class="cert-name">Databricks Data Engineer</div>
+          <div class="cert-body">Certified in data engineering, pipelines, and lakehouse architecture</div>
+        </div>
+        <div class="cert-card">
+          <div class="cert-name">Data Governance Tools</div>
+          <div class="cert-body">Apache Atlas · Alation · data lineage, cataloging, and metadata management</div>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -151,9 +263,9 @@
 <!-- GOVERNANCE PROTOTYPES -->
 <section class="section" id="governance">
   <div class="section-header">
-    <div class="section-tag">Prototype Portfolio</div>
+    <div class="section-tag">Governance Prototype Portfolio</div>
     <div class="section-title">AI Governance Tools</div>
-    <div class="section-sub">Working prototypes that demonstrate AI governance at the intake, runtime, and fairness layers. Each uses deterministic rule engines mapped to real regulatory frameworks.</div>
+    <div class="section-sub">Four working prototypes covering the full AI governance lifecycle - intake, runtime, fairness, and vendor risk. Each uses deterministic rule engines mapped to real regulatory frameworks. No black boxes.</div>
   </div>
 
   <div class="proto-grid">
@@ -162,9 +274,9 @@
         <span class="proto-number">PROTOTYPE 01</span>
         <span class="proto-status status-live">LIVE</span>
       </div>
-      <div class="proto-name">AI Use Case Intake &amp; Risk Classifier</div>
+      <div class="proto-name">AI Use Case Intake & Risk Classifier</div>
       <div class="proto-desc">
-        A structured intake tool for product teams submitting AI systems for governance review. Classifies risk level, maps to NIST AI RMF tiers and EU AI Act categories, and generates a governance assessment with recommended controls and an approval decision - using a deterministic rule engine, not an LLM.
+        A structured intake tool for product teams submitting AI systems for governance review. Walks teams through a 4-step questionnaire, then classifies risk level and maps it to NIST AI RMF tiers and EU AI Act categories using a deterministic rule engine - producing a governance assessment with recommended controls and an auditable approval decision.
       </div>
       <div class="proto-tags">
         <span class="proto-tag">NIST AI RMF</span>
@@ -183,7 +295,7 @@
       </div>
       <div class="proto-name">Agent Governance Console</div>
       <div class="proto-desc">
-        A runtime governance dashboard for autonomous AI agents. Demonstrates permission scoping (allow / block / approval-required), immutable action audit logs with decision traces, one-click kill switches, and incident management - mapped to the Singapore Agentic AI Framework (Jan 2026) and NIST AI RMF Manage function.
+        A runtime governance dashboard for autonomous AI agents. Demonstrates permission scoping (allow / block / approval-required), immutable action audit logs with full decision traces, one-click kill switches, and an incident register - mapped to the Singapore Model AI Governance Framework for Agentic AI (Jan 2026) and NIST AI RMF Manage function.
       </div>
       <div class="proto-tags">
         <span class="proto-tag">Agentic AI</span>
@@ -200,35 +312,37 @@
         <span class="proto-number">PROTOTYPE 03</span>
         <span class="proto-status status-live">LIVE</span>
       </div>
-      <div class="proto-name">Bias &amp; Fairness Audit Tool</div>
+      <div class="proto-name">Bias & Fairness Audit Tool</div>
       <div class="proto-desc">
-        A pre-deployment fairness analysis tool. Upload model prediction data and demographic attributes to compute industry-standard fairness metrics: disparate impact ratio, demographic parity difference, and equal opportunity difference - with plain-language interpretations and remediation guidance mapped to NIST AI RMF Measure.
+        A pre-deployment fairness analysis tool. Upload model prediction data with demographic attributes to compute three industry-standard fairness metrics: Disparate Impact Ratio (EEOC 4/5ths Rule), Demographic Parity Difference, and Equal Opportunity Difference - with plain-language interpretation, group-level breakdowns, and remediation guidance mapped to NIST AI RMF Measure.
       </div>
       <div class="proto-tags">
         <span class="proto-tag">Bias Detection</span>
-        <span class="proto-tag">Fairness Metrics</span>
-        <span class="proto-tag">NIST AI RMF Measure</span>
         <span class="proto-tag">Disparate Impact</span>
-        <span class="proto-tag">Pre-deployment</span>
+        <span class="proto-tag">EEOC 4/5ths Rule</span>
+        <span class="proto-tag">NIST AI RMF Measure</span>
+        <span class="proto-tag">Fairness Metrics</span>
       </div>
       <a href="fairness-audit-tool.html" class="proto-link">Launch Tool →</a>
     </div>
 
-    <div class="proto-card" style="border-style: dashed; opacity: 0.5;">
+    <div class="proto-card">
       <div class="proto-card-top">
         <span class="proto-number">PROTOTYPE 04</span>
-        <span class="proto-status status-soon">PLANNED</span>
+        <span class="proto-status status-live">LIVE</span>
       </div>
       <div class="proto-name">AI Vendor Risk Scorecard</div>
       <div class="proto-desc">
-        A third-party AI vendor assessment tool. Evaluates vendors against security, data governance, model transparency, and regulatory compliance criteria. Generates a scorecard for procurement and legal review.
+        A third-party AI vendor assessment tool covering six weighted governance domains: model transparency, data governance, security, regulatory compliance, incident response, and contractual protections. Scores vendors out of 100, produces a risk tier (Low / Medium / High / Critical), gap analysis, and a downloadable scorecard - mapped to NIST AI RMF Govern.
       </div>
       <div class="proto-tags">
         <span class="proto-tag">Vendor Risk</span>
         <span class="proto-tag">Third-Party AI</span>
+        <span class="proto-tag">NIST AI RMF Govern</span>
         <span class="proto-tag">Procurement</span>
+        <span class="proto-tag">Contractual Controls</span>
       </div>
-      <span class="proto-link proto-link-disabled">Coming Soon</span>
+      <a href="vendor-risk-scorecard.html" class="proto-link">Launch Tool →</a>
     </div>
   </div>
 </section>
@@ -240,48 +354,64 @@
   <div class="section-header">
     <div class="section-tag">AI Product Portfolio</div>
     <div class="section-title">AI Products I've Built</div>
-    <div class="section-sub">Applied AI tools and products demonstrating technical product thinking beyond governance - from workflow automation to intelligent decision support.</div>
+    <div class="section-sub">Applied AI tools demonstrating technical product thinking beyond governance - from intelligent workflow automation to decision support systems. More coming soon.</div>
   </div>
 
   <div class="product-grid">
     <div class="product-card">
       <div class="product-icon">🤖</div>
-      <div class="product-name">Product Coming Soon</div>
-      <div class="product-desc">First AI product prototype in development. Check back soon.</div>
+      <div class="product-name">Coming Soon</div>
+      <div class="product-desc">First AI product prototype in development.</div>
     </div>
     <div class="product-card">
       <div class="product-icon">📊</div>
-      <div class="product-name">Product Coming Soon</div>
+      <div class="product-name">Coming Soon</div>
       <div class="product-desc">Second AI product prototype in development.</div>
     </div>
     <div class="product-card">
       <div class="product-icon">⚡</div>
-      <div class="product-name">Product Coming Soon</div>
+      <div class="product-name">Coming Soon</div>
       <div class="product-desc">Third AI product prototype in development.</div>
     </div>
   </div>
 </section>
 
+<!-- FRAMEWORKS -->
 <div class="frameworks" id="frameworks">
   <div class="fw-inner">
     <div class="section-tag">Framework Knowledge</div>
     <div class="section-title" style="font-family:'Space Mono',monospace;font-size:24px;font-weight:700;color:#f1f5f9;margin-bottom:10px;">Frameworks Applied</div>
+    <div style="font-size:14px;color:#64748b;max-width:580px;line-height:1.6;margin-bottom:0;">Every prototype in this portfolio is mapped to one or more of these frameworks. The rules aren't approximations - they're encoded directly from the regulatory text.</div>
     <div class="fw-grid">
       <div class="fw-card">
         <div class="fw-name">NIST AI RMF 1.0</div>
-        <div class="fw-desc">Applied across Govern, Map, Measure, and Manage functions. Used for risk tier classification, control recommendations, and post-deployment monitoring design.</div>
+        <div class="fw-desc">Applied across all four core functions. Govern maps to vendor risk. Map and Measure map to use case intake and fairness auditing. Manage maps to agent runtime governance.</div>
+        <span class="fw-tag">Govern</span><span class="fw-tag">Map</span><span class="fw-tag">Measure</span><span class="fw-tag">Manage</span>
       </div>
       <div class="fw-card">
         <div class="fw-name">EU AI Act 2024</div>
-        <div class="fw-desc">Encoded risk classification logic from Articles 6 and 50, Annex III, and Recital 165 into a deterministic rule engine for use-case intake assessment.</div>
+        <div class="fw-desc">Articles 6 and 50, Annex III, and Recital 165 encoded as deterministic classification logic in the intake tool. Risk tiers, transparency obligations, and conformity assessment triggers.</div>
+        <span class="fw-tag">Art. 6</span><span class="fw-tag">Art. 50</span><span class="fw-tag">Annex III</span>
       </div>
       <div class="fw-card">
-        <div class="fw-name">Singapore Agentic AI</div>
-        <div class="fw-desc">Applied all four dimensions (Risk Assessment, Human Accountability, Technical Controls, End-User Responsibility) to agent runtime governance design.</div>
+        <div class="fw-name">Singapore Agentic AI Framework · Jan 2026</div>
+        <div class="fw-desc">All four dimensions applied to the Agent Governance Console: Risk Assessment, Human Accountability, Technical Controls, and End-User Responsibility.</div>
+        <span class="fw-tag">Agentic AI</span><span class="fw-tag">Runtime</span>
       </div>
       <div class="fw-card">
         <div class="fw-name">ISO/IEC 42001</div>
-        <div class="fw-desc">Referenced as the AI management system standard for documentation, lifecycle governance, and audit trail requirements across all prototypes.</div>
+        <div class="fw-desc">Referenced as the AI management system standard across all prototypes for documentation, audit trails, lifecycle governance, and control recommendations.</div>
+        <span class="fw-tag">AI Management</span><span class="fw-tag">Audit</span>
+      </div>
+      <div class="fw-card">
+        <div class="fw-name">EEOC 4/5ths Rule</div>
+        <div class="fw-desc">Disparate Impact Ratio threshold (≥0.80) implemented in the Fairness Audit Tool as the primary test for adverse impact in hiring, lending, and benefits contexts.</div>
+        <span class="fw-tag">Fairness</span><span class="fw-tag">Disparate Impact</span>
+      </div>
+      <div class="fw-card">
+        <div class="fw-name">Data Governance · Apache Atlas & Alation</div>
+        <div class="fw-desc">Hands-on experience with enterprise data governance tooling - metadata management, data lineage, cataloging, and access policy enforcement at scale.</div>
+        <span class="fw-tag">Apache Atlas</span><span class="fw-tag">Alation</span>
       </div>
     </div>
   </div>
@@ -289,18 +419,20 @@
 
 <!-- CONTACT -->
 <section class="contact" id="contact">
-  <div class="contact-title">Let's Talk AI Governance</div>
-  <div class="contact-sub">Open to roles in AI governance, technical product management, and AI risk. Based in Seattle / Bellevue, WA. Open to remote.</div>
+  <div class="contact-title">Let's Build Something Trustworthy</div>
+  <div class="contact-sub">
+    Based in Seattle / Bellevue, WA. Passionate about data governance, AI risk, privacy, and security. Always interested in connecting with people building AI the right way.
+  </div>
   <div class="contact-links">
     <a href="https://www.linkedin.com/in/punicabhardwaj" target="_blank" class="btn-primary">LinkedIn</a>
     <a href="mailto:punica.bhardwaj@gmail.com" class="btn-outline">Email</a>
-    <a href="https://github.com" target="_blank" target="_blank" class="btn-outline">GitHub</a>
+    <a href="https://github.com/punicabhardwaj" target="_blank" class="btn-outline">GitHub</a>
   </div>
 </section>
 
 <footer>
-  <div class="footer-text">AI/GOV PORTFOLIO · SEATTLE, WA</div>
-  <div class="footer-text">BUILT WITH DETERMINISTIC RULE ENGINES · NO AI HALLUCINATIONS</div>
+  <div class="footer-text">PUNICA BHARDWAJ · SEATTLE, WA · 2026</div>
+  <div class="footer-text">GOVERNED AI · BUILT TO TRUST</div>
 </footer>
 
 </body>
