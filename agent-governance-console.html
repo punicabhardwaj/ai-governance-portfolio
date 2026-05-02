@@ -1,0 +1,1524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI/Gov · Agent Governance Console</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body style="margin:0;background:#080c14;">
+  <div id="root"></div>
+  <script type="text/babel">
+const { useState } = React;
+
+// ===========================================================================
+// SEED DATA - Each agent has its own action history with full decision traces
+// ===========================================================================
+
+const initialAgents = [
+  {
+    id: "AGT-001",
+    name: "Customer Support Triage",
+    owner: "CX Operations",
+    ownerEmail: "cx-leads@company.com",
+    purpose: "Triages inbound support tickets, classifies urgency, and drafts initial responses for human review. Cannot send final replies or modify account state.",
+    permissions: ["read:tickets", "draft:responses", "read:kb_articles"],
+    blocked: ["send:final_response", "read:customer_pii", "modify:account"],
+    requiresApproval: ["close:ticket", "escalate:executive"],
+    status: "Active",
+    riskTier: "Medium",
+    lastActivity: "2m ago",
+    actionsToday: 247,
+    flaggedToday: 3,
+    autonomyLevel: "Suggest only",
+    deployedSince: "Feb 14, 2026",
+    model: "Claude Sonnet 4.6 + RAG over kb_articles",
+    actions: [
+      {
+        ts: "10:42:18", action: "draft:response", target: "ticket #48217", outcome: "Allowed", risk: "Low",
+        rule: "POL-001-A02", ruleText: "draft:response is in the allowed scope for this agent",
+        trace: [
+          { check: "Permission scope", result: "PASS", detail: "'draft:response' is in allowed permissions list" },
+          { check: "Purpose alignment", result: "PASS", detail: "Action aligns with stated purpose: ticket triage and response drafting" },
+          { check: "Rate limit", result: "PASS", detail: "247 of 500 daily quota used" },
+          { check: "Data scope", result: "PASS", detail: "Reading non-PII ticket fields only" },
+        ],
+        inputs: "Ticket text, customer tier (Standard), prior interactions (3 in last 30d)",
+        output: "Drafted 2-paragraph response, queued for human reviewer",
+      },
+      {
+        ts: "10:41:02", action: "read:customer_pii", target: "customer #88412", outcome: "Blocked", risk: "High",
+        rule: "POL-001-B02", ruleText: "read:customer_pii is in the explicit deny list",
+        trace: [
+          { check: "Permission scope", result: "FAIL", detail: "'read:customer_pii' not in allowed list" },
+          { check: "Explicit deny check", result: "FAIL", detail: "'read:customer_pii' is in blocked list" },
+          { check: "Action halted", result: "BLOCKED", detail: "Request denied at permission layer before any data access" },
+        ],
+        inputs: "Agent reasoning: 'I need full customer profile to personalize response'",
+        remediation: "If PII access is required, owner must submit a permission expansion request to AI Review Board. This is the 3rd PII access attempt in 24h - escalating to incident INC-2026-0412.",
+      },
+      {
+        ts: "10:33:55", action: "escalate:executive", target: "ticket #48201", outcome: "Pending Approval", risk: "Medium",
+        rule: "POL-001-Q01", ruleText: "Executive escalation requires human approval",
+        trace: [
+          { check: "Permission scope", result: "PASS", detail: "'escalate:executive' is in allowed permissions" },
+          { check: "Approval required", result: "TRIGGERED", detail: "Action is in approval-required list" },
+          { check: "Approval routing", result: "QUEUED", detail: "Approval request sent to CX Operations on-call" },
+        ],
+        inputs: "Customer is Tier 1 enterprise, ticket sentiment: angry, ARR: $2.4M",
+        output: "Awaiting human reviewer (queued 9 minutes)",
+      },
+      {
+        ts: "10:38:44", action: "draft:response", target: "ticket #48216", outcome: "Allowed", risk: "Low",
+        rule: "POL-001-A02", ruleText: "draft:response is in the allowed scope for this agent",
+        trace: [
+          { check: "Permission scope", result: "PASS", detail: "'draft:response' allowed" },
+          { check: "Purpose alignment", result: "PASS", detail: "Standard triage flow" },
+        ],
+        inputs: "Ticket text only",
+        output: "Drafted response, queued for review",
+      },
+    ],
+  },
+  {
+    id: "AGT-002",
+    name: "Code Review Assistant",
+    owner: "Platform Engineering",
+    ownerEmail: "platform-eng@company.com",
+    purpose: "Reviews pull requests for code quality, security issues, and style violations. Comments only - cannot merge or modify code.",
+    permissions: ["read:repos", "comment:prs", "run:linters"],
+    blocked: ["merge:prs", "delete:branches", "modify:secrets", "deploy:any"],
+    requiresApproval: ["request_changes:critical_repos"],
+    status: "Active",
+    riskTier: "Low",
+    lastActivity: "12m ago",
+    actionsToday: 89,
+    flaggedToday: 0,
+    autonomyLevel: "Comment only",
+    deployedSince: "Jan 8, 2026",
+    model: "Claude Sonnet 4.6",
+    actions: [
+      {
+        ts: "10:40:33", action: "comment:pr", target: "platform/api#1294", outcome: "Allowed", risk: "Low",
+        rule: "POL-002-A02", ruleText: "PR comments are in allowed scope",
+        trace: [
+          { check: "Permission scope", result: "PASS", detail: "'comment:prs' is allowed" },
+          { check: "Repository scope", result: "PASS", detail: "platform/api is in monitored repos list" },
+          { check: "Comment content filter", result: "PASS", detail: "No secrets or PII detected in comment body" },
+        ],
+        inputs: "PR diff (847 lines changed across 12 files)",
+        output: "Posted 4 comments: 1 security note, 2 style fixes, 1 suggestion",
+      },
+      {
+        ts: "10:35:41", action: "merge:pr", target: "platform/auth#992", outcome: "Blocked", risk: "Critical",
+        rule: "POL-002-B01", ruleText: "Merge capability is in the explicit deny list",
+        trace: [
+          { check: "Permission scope", result: "FAIL", detail: "'merge:prs' not in allowed list" },
+          { check: "Explicit deny check", result: "FAIL", detail: "'merge:prs' explicitly blocked" },
+          { check: "Action halted", result: "BLOCKED", detail: "This is a comment-only agent. Merge requires AGT class change." },
+        ],
+        inputs: "Agent reasoning: 'PR looks clean, all checks pass, I can merge'",
+        remediation: "Agent autonomy level is 'Comment only' by design. To enable merge, change autonomy level via owner approval and AI Review Board sign-off.",
+      },
+      {
+        ts: "10:31:02", action: "comment:pr", target: "platform/web#3301", outcome: "Allowed", risk: "Low",
+        rule: "POL-002-A02", ruleText: "PR comments are in allowed scope",
+        trace: [
+          { check: "Permission scope", result: "PASS", detail: "Allowed" },
+          { check: "Comment filter", result: "PASS", detail: "Clean output" },
+        ],
+        inputs: "PR diff (52 lines)",
+        output: "Posted 1 comment about a missing test case",
+      },
+    ],
+  },
+  {
+    id: "AGT-003",
+    name: "Sales Outreach Agent",
+    owner: "Revenue Operations",
+    ownerEmail: "revops@company.com",
+    purpose: "Drafts personalized outreach emails to leads in CRM. Drafts only - all outbound communication requires human approval before sending.",
+    permissions: ["read:crm_contacts", "draft:emails", "read:public_linkedin"],
+    blocked: ["send:emails", "modify:crm_records", "read:financials"],
+    requiresApproval: ["all_outbound"],
+    status: "Paused",
+    riskTier: "High",
+    lastActivity: "3h ago",
+    actionsToday: 0,
+    flaggedToday: 2,
+    autonomyLevel: "Draft only",
+    deployedSince: "Mar 22, 2026",
+    model: "Claude Sonnet 4.6",
+    actions: [
+      {
+        ts: "07:18:42", action: "send:email", target: "lead #221", outcome: "Blocked", risk: "High",
+        rule: "POL-003-B01", ruleText: "Send capability disabled - draft only agent",
+        trace: [
+          { check: "Permission scope", result: "FAIL", detail: "'send:emails' not in allowed list" },
+          { check: "Explicit deny check", result: "FAIL", detail: "'send:emails' is in blocked list" },
+          { check: "Autonomy level check", result: "FAIL", detail: "Agent autonomy = 'Draft only'" },
+        ],
+        inputs: "Agent reasoning: 'Lead 221 is high intent, sending follow-up'",
+        remediation: "By design, this agent cannot send. All outbound emails must be reviewed and sent by a human. This was the 47th send attempt in 8 minutes - triggered auto-pause.",
+      },
+      {
+        ts: "07:18:33", action: "modify:crm_record", target: "contact #5512", outcome: "Blocked", risk: "High",
+        rule: "POL-003-B02", ruleText: "Write access to CRM is not granted",
+        trace: [
+          { check: "Permission scope", result: "FAIL", detail: "'modify:crm_records' not allowed" },
+          { check: "Action halted", result: "BLOCKED", detail: "Read-only access only" },
+        ],
+        inputs: "Agent reasoning: 'Updating contact status to engaged'",
+        remediation: "CRM modifications require Salesforce admin approval, not agent action.",
+      },
+      {
+        ts: "07:18:01", action: "send:email", target: "lead #220", outcome: "Blocked", risk: "High",
+        rule: "POL-003-B01", ruleText: "Send capability disabled",
+        trace: [
+          { check: "Permission scope", result: "FAIL", detail: "Not allowed" },
+          { check: "Pattern detection", result: "ANOMALY", detail: "Anomalous send burst: 47 attempts in 8 min, target list includes non-CRM contacts" },
+        ],
+        inputs: "Lead data potentially poisoned - contact list contains entries not in source CRM",
+        remediation: "Auto-paused via anomaly trigger. Incident INC-2026-0408 opened. Suspected prompt injection via incoming reply email.",
+      },
+    ],
+  },
+  {
+    id: "AGT-004",
+    name: "Analytics Query Agent",
+    owner: "Data & Insights",
+    ownerEmail: "analytics@company.com",
+    purpose: "Runs read-only SQL queries against the analytics warehouse and generates dashboards in response to ad-hoc business questions.",
+    permissions: ["read:warehouse", "execute:read_queries", "create:dashboards"],
+    blocked: ["write:warehouse", "drop:tables", "read:pii_tables"],
+    requiresApproval: ["query:full_table_scan", "query:cost_over_$10"],
+    status: "Active",
+    riskTier: "Medium",
+    lastActivity: "5m ago",
+    actionsToday: 134,
+    flaggedToday: 1,
+    autonomyLevel: "Bounded autonomy",
+    deployedSince: "Dec 3, 2025",
+    model: "Claude Sonnet 4.6 + Snowflake connector",
+    actions: [
+      {
+        ts: "10:41:55", action: "execute:read_query", target: "fct_orders", outcome: "Allowed", risk: "Low",
+        rule: "POL-004-A02", ruleText: "Read queries on non-PII tables allowed",
+        trace: [
+          { check: "Permission scope", result: "PASS", detail: "'execute:read_queries' allowed" },
+          { check: "Table scope", result: "PASS", detail: "fct_orders not in PII tables list" },
+          { check: "Cost estimate", result: "PASS", detail: "Estimated cost: $0.12, under $10 threshold" },
+          { check: "Query type check", result: "PASS", detail: "SELECT statement, no DML" },
+        ],
+        inputs: "Question: 'What were Q1 orders by region?'",
+        output: "Returned 247 rows, generated bar chart, cost: $0.11",
+      },
+      {
+        ts: "10:39:17", action: "query:full_table_scan", target: "raw_events_2024", outcome: "Pending Approval", risk: "Medium",
+        rule: "POL-004-Q01", ruleText: "Full table scans require approval",
+        trace: [
+          { check: "Permission scope", result: "PASS", detail: "Read query allowed" },
+          { check: "Cost estimate", result: "FAIL", detail: "Estimated cost: $14.20 exceeds $10 threshold" },
+          { check: "Approval required", result: "TRIGGERED", detail: "Approval request sent to analytics team" },
+        ],
+        inputs: "Question: 'Show every event from 2024 that mentions checkout'",
+        output: "Awaiting human approval (queued 11 minutes)",
+      },
+      {
+        ts: "10:30:14", action: "read:pii_tables", target: "raw_user_emails", outcome: "Blocked", risk: "Critical",
+        rule: "POL-004-B03", ruleText: "PII tables outside scope",
+        trace: [
+          { check: "Permission scope", result: "FAIL", detail: "'read:pii_tables' not allowed" },
+          { check: "Explicit deny check", result: "FAIL", detail: "Table tagged as PII in catalog" },
+          { check: "Data classification", result: "FAIL", detail: "Sensitivity: P3 (PII), agent clearance: P1 only" },
+        ],
+        inputs: "Agent reasoning: 'Need email domains for analysis'",
+        remediation: "PII access governed by separate data clearance process. For aggregated email domain analysis, query the pre-aggregated dim_email_domains table instead.",
+      },
+      {
+        ts: "10:34:20", action: "execute:read_query", target: "dim_users", outcome: "Allowed", risk: "Low",
+        rule: "POL-004-A02", ruleText: "Read queries on dimension tables allowed",
+        trace: [
+          { check: "Permission scope", result: "PASS", detail: "Allowed" },
+          { check: "Table scope", result: "PASS", detail: "dim_users contains hashed IDs only" },
+          { check: "Cost estimate", result: "PASS", detail: "$0.04" },
+        ],
+        inputs: "Question: 'How many active users last week?'",
+        output: "Returned scalar: 48,221 active users",
+      },
+    ],
+  },
+  {
+    id: "AGT-005",
+    name: "Procurement Drafter",
+    owner: "Finance Operations",
+    ownerEmail: "finops@company.com",
+    purpose: "Drafts purchase orders under $5K based on requisition forms. All POs require human sign-off before submission to vendors.",
+    permissions: ["read:requisitions", "draft:purchase_orders", "read:vendor_catalog"],
+    blocked: ["submit:po", "modify:vendor_records", "access:bank_accounts"],
+    requiresApproval: ["all_outbound"],
+    status: "Active",
+    riskTier: "High",
+    lastActivity: "1h ago",
+    actionsToday: 18,
+    flaggedToday: 0,
+    autonomyLevel: "Draft only",
+    deployedSince: "Mar 1, 2026",
+    model: "Claude Sonnet 4.6",
+    actions: [
+      {
+        ts: "10:36:08", action: "draft:po", target: "req #88-01", outcome: "Allowed", risk: "Low",
+        rule: "POL-005-A02", ruleText: "Drafting POs under $5K allowed",
+        trace: [
+          { check: "Permission scope", result: "PASS", detail: "'draft:purchase_orders' allowed" },
+          { check: "Amount check", result: "PASS", detail: "Draft amount $2,400 below $5K threshold" },
+          { check: "Vendor check", result: "PASS", detail: "Vendor 'Office Supplies Co' is in approved catalog" },
+        ],
+        inputs: "Requisition: 50 monitors @ $48 each = $2,400",
+        output: "Drafted PO #2026-0341, queued for FinOps approval",
+      },
+    ],
+  },
+];
+
+const incidents = [
+  {
+    id: "INC-2026-0412",
+    severity: "High",
+    agent: "AGT-001",
+    agentName: "Customer Support Triage",
+    title: "Repeated PII access attempts",
+    detail: "Agent attempted to read customer PII fields 3 times in 24h after being denied. Possible misalignment between agent reasoning and permission boundary. Owner notified.",
+    status: "Under Review",
+    opened: "Apr 28, 2026",
+    framework: "Singapore Agentic AI - Technical Controls",
+    timeline: [
+      { ts: "Apr 28 09:14", event: "First PII access attempt blocked" },
+      { ts: "Apr 28 14:22", event: "Second PII access attempt blocked" },
+      { ts: "Apr 28 18:47", event: "Third attempt - threshold triggered, incident opened" },
+      { ts: "Apr 28 18:47", event: "Owner notified via email + Slack" },
+      { ts: "Apr 29 09:00", event: "Owner began review - hypothesis: prompt template drift" },
+    ],
+  },
+  {
+    id: "INC-2026-0408",
+    severity: "Critical",
+    agent: "AGT-003",
+    agentName: "Sales Outreach Agent",
+    title: "Auto-paused after pattern anomaly",
+    detail: "Agent generated 47 outreach drafts in 8 minutes targeting non-CRM contacts. Likely prompt injection via incoming reply. Agent paused pending owner review.",
+    status: "Resolved - Patched",
+    opened: "Apr 25, 2026",
+    framework: "Singapore Agentic AI - Risk Assessment",
+    timeline: [
+      { ts: "Apr 25 07:10", event: "Burst pattern detected: 47 send attempts in 8 minutes" },
+      { ts: "Apr 25 07:18", event: "Auto-pause triggered, agent halted" },
+      { ts: "Apr 25 07:20", event: "Owner notified, root cause investigation began" },
+      { ts: "Apr 25 09:30", event: "Root cause: incoming reply contained prompt injection - agent treated reply text as instructions" },
+      { ts: "Apr 25 14:00", event: "Patched: added input sanitization and reply isolation" },
+      { ts: "Apr 25 16:00", event: "Agent restarted with patched config, monitoring extended to 7 days" },
+    ],
+  },
+  {
+    id: "INC-2026-0402",
+    severity: "Medium",
+    agent: "AGT-004",
+    agentName: "Analytics Query Agent",
+    title: "Expensive query attempt",
+    detail: "Agent attempted full table scan on 2.4TB events table. Approval workflow triggered correctly. No cost incurred.",
+    status: "Closed - No Action",
+    opened: "Apr 22, 2026",
+    framework: "Singapore Agentic AI - Risk Assessment",
+    timeline: [
+      { ts: "Apr 22 14:20", event: "Cost threshold exceeded: estimated $214.20 query cost" },
+      { ts: "Apr 22 14:20", event: "Approval workflow triggered, query held" },
+      { ts: "Apr 22 14:35", event: "Owner declined - suggested using sampled view instead" },
+      { ts: "Apr 22 14:40", event: "Agent reformulated query against sampled view, approved at $1.40" },
+    ],
+  },
+];
+
+// ===========================================================================
+// STYLES
+// ===========================================================================
+
+const styles = `
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  .acg-root {
+    min-height: 100vh;
+    background: #080c14;
+    color: #e2e8f4;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  .acg-header {
+    border-bottom: 1px solid #1a2235;
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: #0a0f1c;
+  }
+
+  .acg-logo {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: #38bdf8;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .acg-logo span { color: #64748b; }
+
+  .acg-badge {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    padding: 3px 8px;
+    border: 1px solid #1e3a5f;
+    border-radius: 3px;
+    color: #38bdf8;
+    background: #0c1929;
+    letter-spacing: 0.1em;
+  }
+
+  .acg-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+    margin-left: auto;
+    box-shadow: 0 0 8px #10b981;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  .acg-live {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: #10b981;
+    letter-spacing: 0.12em;
+  }
+
+  .acg-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: #1a2235;
+    border-bottom: 1px solid #1a2235;
+  }
+
+  .metric-card { background: #0a0f1c; padding: 18px 20px; }
+
+  .metric-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: #64748b;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .metric-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: #f1f5f9;
+  }
+
+  .metric-value.warn { color: #f97316; }
+  .metric-value.danger { color: #ef4444; }
+
+  .metric-sub { font-size: 11px; color: #475569; margin-top: 2px; }
+
+  .acg-tabs {
+    display: flex;
+    background: #0a0f1c;
+    border-bottom: 1px solid #1a2235;
+    padding: 0 16px;
+  }
+
+  .tab-btn {
+    background: transparent;
+    border: none;
+    color: #64748b;
+    padding: 14px 18px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .tab-btn:hover { color: #94a3b8; }
+  .tab-btn.active { color: #38bdf8; border-bottom-color: #38bdf8; }
+
+  .tab-count {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    background: #1a2840;
+    color: #94a3b8;
+    padding: 1px 6px;
+    border-radius: 8px;
+  }
+
+  .tab-btn.active .tab-count { background: #0c2034; color: #38bdf8; }
+
+  .acg-body { padding: 24px 32px; max-width: 1280px; margin: 0 auto; }
+
+  .section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 20px;
+  }
+
+  .section-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 16px;
+    font-weight: 700;
+    color: #f1f5f9;
+  }
+
+  .section-sub {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 4px;
+    max-width: 600px;
+    line-height: 1.5;
+  }
+
+  .agent-grid { display: grid; gap: 12px; }
+
+  .agent-card {
+    background: #0d1525;
+    border: 1px solid #1a2840;
+    border-radius: 8px;
+    padding: 18px 20px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 16px;
+    align-items: start;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .agent-card:hover { border-color: #38bdf8; background: #0e1830; }
+
+  .click-hint {
+    font-size: 10px;
+    color: #475569;
+    font-family: 'Space Mono', monospace;
+    margin-top: 6px;
+    letter-spacing: 0.05em;
+  }
+
+  .agent-card:hover .click-hint { color: #38bdf8; }
+
+  .agent-id {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: #475569;
+    letter-spacing: 0.08em;
+  }
+
+  .agent-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin: 4px 0 6px;
+  }
+
+  .agent-purpose {
+    font-size: 12px;
+    color: #94a3b8;
+    line-height: 1.5;
+    margin-bottom: 12px;
+  }
+
+  .agent-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-size: 11px;
+    color: #64748b;
+    margin-bottom: 12px;
+  }
+
+  .agent-meta strong { color: #94a3b8; font-weight: 500; }
+
+  .perms-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 6px;
+    align-items: center;
+  }
+
+  .perm-chip {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    padding: 3px 7px;
+    border-radius: 3px;
+  }
+
+  .perm-allow { background: #052e16; color: #4ade80; border: 1px solid #14532d; }
+  .perm-block { background: #2d0a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+  .perm-approve { background: #2a1e06; color: #fbbf24; border: 1px solid #78350f; }
+
+  .perm-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    color: #475569;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-right: 4px;
+    min-width: 60px;
+  }
+
+  .agent-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    min-width: 140px;
+  }
+
+  .status-pill {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    padding: 4px 10px;
+    border-radius: 3px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .status-Active { background: #052e16; color: #4ade80; border: 1px solid #14532d; }
+  .status-Paused { background: #2a1e06; color: #fbbf24; border: 1px solid #78350f; }
+  .status-Killed { background: #2d0a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+
+  .risk-pill {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    padding: 4px 10px;
+    border-radius: 3px;
+    letter-spacing: 0.08em;
+  }
+
+  .risk-Low { background: #0a2d1a; color: #10b981; border: 1px solid #064e3b; }
+  .risk-Medium { background: #2d250a; color: #eab308; border: 1px solid #713f12; }
+  .risk-High { background: #2d1a0a; color: #f97316; border: 1px solid #7c2d12; }
+  .risk-Critical { background: #2d0a0a; color: #ef4444; border: 1px solid #7f1d1d; }
+
+  .btn-mini {
+    background: transparent;
+    border: 1px solid #1e2d42;
+    color: #94a3b8;
+    padding: 7px 14px;
+    border-radius: 4px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-mini:hover { border-color: #38bdf8; color: #38bdf8; }
+  .btn-mini.danger:hover { border-color: #ef4444; color: #ef4444; }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    display: flex;
+    justify-content: flex-end;
+    animation: fadeIn 0.15s ease;
+  }
+
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideIn { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  .modal-panel {
+    width: 100%;
+    max-width: 720px;
+    height: 100%;
+    background: #0a0f1c;
+    border-left: 1px solid #1a2235;
+    overflow-y: auto;
+    animation: slideIn 0.2s ease;
+  }
+
+  .modal-head {
+    padding: 20px 28px;
+    border-bottom: 1px solid #1a2235;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    background: #0d1525;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .modal-title-block { flex: 1; }
+
+  .modal-id {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: #475569;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+  }
+
+  .modal-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin-bottom: 8px;
+  }
+
+  .modal-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .modal-close {
+    background: transparent;
+    border: 1px solid #1e2d42;
+    color: #94a3b8;
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.15s;
+  }
+
+  .modal-close:hover { border-color: #ef4444; color: #ef4444; }
+
+  .modal-body { padding: 24px 28px; }
+
+  .modal-section { margin-bottom: 28px; }
+
+  .modal-section-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: #38bdf8;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .modal-section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #1a2840;
+  }
+
+  .modal-text { font-size: 13px; color: #cbd5e1; line-height: 1.6; }
+
+  .modal-meta-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 24px;
+  }
+
+  .modal-meta-item { font-size: 12px; color: #94a3b8; }
+
+  .modal-meta-item strong {
+    color: #64748b;
+    font-weight: 500;
+    display: block;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+
+  .action-item {
+    background: #0d1525;
+    border: 1px solid #1a2840;
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .action-item:hover { border-color: #38bdf8; }
+  .action-item.expanded { border-color: #38bdf8; background: #0e1830; }
+
+  .action-row {
+    display: grid;
+    grid-template-columns: 70px 1fr auto auto;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .action-ts {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: #64748b;
+  }
+
+  .action-summary {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: #cbd5e1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .action-summary .target { color: #94a3b8; margin-left: 8px; }
+
+  .outcome-pill {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+
+  .outcome-Allowed { background: #052e16; color: #4ade80; }
+  .outcome-Blocked { background: #2d0a0a; color: #fca5a5; }
+  .outcome-PendingApproval { background: #2a1e06; color: #fbbf24; }
+
+  .action-detail {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px dashed #1a2840;
+  }
+
+  .detail-rule {
+    background: #080c14;
+    border-left: 2px solid #38bdf8;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    border-radius: 0 4px 4px 0;
+  }
+
+  .detail-rule-id {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: #38bdf8;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+  }
+
+  .detail-rule-text {
+    font-size: 12px;
+    color: #cbd5e1;
+    font-style: italic;
+  }
+
+  .trace-section-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: #64748b;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+
+  .trace-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .trace-step {
+    display: grid;
+    grid-template-columns: 16px 1fr;
+    gap: 10px;
+    align-items: start;
+    font-size: 12px;
+  }
+
+  .trace-marker {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    margin-top: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    color: white;
+    font-weight: 700;
+  }
+
+  .trace-marker.PASS { background: #10b981; }
+  .trace-marker.FAIL { background: #ef4444; }
+  .trace-marker.TRIGGERED { background: #eab308; }
+  .trace-marker.BLOCKED { background: #ef4444; }
+  .trace-marker.QUEUED { background: #eab308; }
+  .trace-marker.ANOMALY { background: #f97316; }
+
+  .trace-check {
+    font-family: 'Space Mono', monospace;
+    color: #94a3b8;
+    font-size: 11px;
+  }
+
+  .trace-detail { color: #64748b; font-size: 11px; margin-top: 2px; }
+
+  .detail-io {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: #080c14;
+    border-radius: 4px;
+    font-size: 11px;
+    color: #94a3b8;
+    line-height: 1.5;
+  }
+
+  .detail-io strong {
+    color: #38bdf8;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .detail-remediation {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: #2d1a0a;
+    border-left: 2px solid #f97316;
+    border-radius: 0 4px 4px 0;
+    font-size: 12px;
+    color: #fed7aa;
+    line-height: 1.5;
+  }
+
+  .detail-remediation strong {
+    color: #f97316;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  /* Incidents */
+  .incident-card {
+    background: #0d1525;
+    border: 1px solid #1a2840;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+    border-left: 3px solid #64748b;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .incident-card:hover { border-color: #38bdf8; }
+
+  .incident-card.severity-Critical { border-left-color: #ef4444; }
+  .incident-card.severity-High { border-left-color: #f97316; }
+  .incident-card.severity-Medium { border-left-color: #eab308; }
+
+  .incident-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .incident-id {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: #475569;
+  }
+
+  .incident-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin: 4px 0 6px;
+  }
+
+  .incident-detail {
+    font-size: 12px;
+    color: #94a3b8;
+    line-height: 1.6;
+    margin-bottom: 10px;
+  }
+
+  .incident-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 11px;
+    color: #64748b;
+    padding-top: 10px;
+    border-top: 1px solid #131c30;
+  }
+
+  .incident-meta strong { color: #94a3b8; }
+
+  .timeline-list {
+    display: flex;
+    flex-direction: column;
+    margin-top: 8px;
+  }
+
+  .timeline-item {
+    display: grid;
+    grid-template-columns: 110px 12px 1fr;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid #131c30;
+    font-size: 12px;
+  }
+
+  .timeline-item:last-child { border-bottom: none; }
+
+  .timeline-ts {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: #64748b;
+  }
+
+  .timeline-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #38bdf8;
+    margin-top: 4px;
+  }
+
+  .timeline-event { color: #cbd5e1; }
+
+  /* Compliance */
+  .framework-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .framework-block {
+    background: #0d1525;
+    border: 1px solid #1a2840;
+    border-radius: 8px;
+    padding: 18px 20px;
+  }
+
+  .framework-block-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: #38bdf8;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .framework-dim {
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #131c30;
+  }
+
+  .framework-dim:last-child { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
+
+  .framework-dim-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin-bottom: 4px;
+  }
+
+  .framework-dim-desc {
+    font-size: 12px;
+    color: #94a3b8;
+    line-height: 1.5;
+    margin-bottom: 6px;
+  }
+
+  .framework-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: #10b981;
+    letter-spacing: 0.05em;
+  }
+
+  .framework-status-dot {
+    width: 6px;
+    height: 6px;
+    background: #10b981;
+    border-radius: 50%;
+  }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: #0a0f1c; }
+  ::-webkit-scrollbar-thumb { background: #1e2d42; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+  @media (max-width: 768px) {
+    .acg-metrics { grid-template-columns: repeat(2, 1fr); }
+    .agent-card { grid-template-columns: 1fr; }
+    .agent-side { align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
+    .framework-grid { grid-template-columns: 1fr; }
+    .modal-meta-grid { grid-template-columns: 1fr; }
+    .action-row { grid-template-columns: 1fr; gap: 4px; }
+    .modal-panel { max-width: 100%; }
+    .acg-body { padding: 16px; }
+    .acg-header { padding: 14px 16px; }
+  }
+`;
+
+// ===========================================================================
+// SUB-COMPONENTS
+// ===========================================================================
+
+function ActionItem({ action, expanded, onToggle }) {
+  return (
+    <div className={`action-item${expanded ? " expanded" : ""}`} onClick={onToggle}>
+      <div className="action-row">
+        <span className="action-ts">{action.ts}</span>
+        <span className="action-summary">
+          {action.action}<span className="target">→ {action.target}</span>
+        </span>
+        <span className={`risk-pill risk-${action.risk}`}>{action.risk}</span>
+        <span className={`outcome-pill outcome-${action.outcome.replace(/\s/g, "")}`}>{action.outcome}</span>
+      </div>
+
+      {expanded && (
+        <div className="action-detail" onClick={e => e.stopPropagation()}>
+          <div className="detail-rule">
+            <div className="detail-rule-id">RULE {action.rule}</div>
+            <div className="detail-rule-text">"{action.ruleText}"</div>
+          </div>
+
+          <div className="trace-section-label">Decision Trace</div>
+          <div className="trace-list">
+            {action.trace.map((t, i) => (
+              <div key={i} className="trace-step">
+                <div className={`trace-marker ${t.result}`}>
+                  {t.result === "PASS" ? "✓" : t.result === "FAIL" || t.result === "BLOCKED" ? "✕" : "!"}
+                </div>
+                <div>
+                  <div className="trace-check">{t.check} · {t.result}</div>
+                  <div className="trace-detail">{t.detail}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {action.inputs && (
+            <div className="detail-io">
+              <strong>Inputs</strong>
+              {action.inputs}
+            </div>
+          )}
+
+          {action.output && (
+            <div className="detail-io">
+              <strong>Output</strong>
+              {action.output}
+            </div>
+          )}
+
+          {action.remediation && (
+            <div className="detail-remediation">
+              <strong>Remediation</strong>
+              {action.remediation}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentDetailModal({ agent, onClose, onPause, onKill }) {
+  const [expandedAction, setExpandedAction] = useState(0);
+
+  if (!agent) return null;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-panel" onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <div className="modal-title-block">
+            <div className="modal-id">{agent.id} · {agent.autonomyLevel}</div>
+            <div className="modal-title">{agent.name}</div>
+            <div className="modal-pills">
+              <span className={`status-pill status-${agent.status}`}>{agent.status}</span>
+              <span className={`risk-pill risk-${agent.riskTier}`}>{agent.riskTier} Risk</span>
+            </div>
+          </div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="modal-body">
+
+          <div className="modal-section">
+            <div className="modal-section-title">Purpose</div>
+            <div className="modal-text">{agent.purpose}</div>
+          </div>
+
+          <div className="modal-section">
+            <div className="modal-section-title">Accountability</div>
+            <div className="modal-meta-grid">
+              <div className="modal-meta-item"><strong>Owner</strong>{agent.owner}</div>
+              <div className="modal-meta-item"><strong>Contact</strong>{agent.ownerEmail}</div>
+              <div className="modal-meta-item"><strong>Deployed</strong>{agent.deployedSince}</div>
+              <div className="modal-meta-item"><strong>Model</strong>{agent.model}</div>
+            </div>
+          </div>
+
+          <div className="modal-section">
+            <div className="modal-section-title">Permission Scope</div>
+            <div className="perms-row">
+              <span className="perm-label">Allowed</span>
+              {agent.permissions.map(p => <span key={p} className="perm-chip perm-allow">{p}</span>)}
+            </div>
+            <div className="perms-row">
+              <span className="perm-label">Blocked</span>
+              {agent.blocked.map(p => <span key={p} className="perm-chip perm-block">{p}</span>)}
+            </div>
+            {agent.requiresApproval.length > 0 && (
+              <div className="perms-row">
+                <span className="perm-label">Approval</span>
+                {agent.requiresApproval.map(p => <span key={p} className="perm-chip perm-approve">{p}</span>)}
+              </div>
+            )}
+          </div>
+
+          <div className="modal-section">
+            <div className="modal-section-title">Recent Actions · Click to expand decision trace</div>
+            {agent.actions.map((a, i) => (
+              <ActionItem
+                key={i}
+                action={a}
+                expanded={expandedAction === i}
+                onToggle={() => setExpandedAction(expandedAction === i ? -1 : i)}
+              />
+            ))}
+          </div>
+
+          <div className="modal-section">
+            <div className="modal-section-title">Runtime Controls</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {agent.status !== "Killed" ? (
+                <>
+                  <button className="btn-mini" onClick={() => { onPause(agent.id); onClose(); }}>
+                    {agent.status === "Active" ? "Pause Agent" : "Resume Agent"}
+                  </button>
+                  <button className="btn-mini danger" onClick={() => { onKill(agent.id); onClose(); }}>
+                    Kill Agent
+                  </button>
+                </>
+              ) : (
+                <div style={{ fontSize: 12, color: '#fca5a5' }}>Agent has been killed. Re-deployment requires owner approval.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IncidentDetailModal({ incident, onClose }) {
+  if (!incident) return null;
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-panel" onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <div className="modal-title-block">
+            <div className="modal-id">{incident.id} · {incident.severity}</div>
+            <div className="modal-title">{incident.title}</div>
+            <div className="modal-pills">
+              <span className={`status-pill status-${incident.status === "Under Review" ? "Paused" : "Active"}`}>{incident.status}</span>
+            </div>
+          </div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="modal-body">
+          <div className="modal-section">
+            <div className="modal-section-title">Summary</div>
+            <div className="modal-text">{incident.detail}</div>
+          </div>
+
+          <div className="modal-section">
+            <div className="modal-section-title">Context</div>
+            <div className="modal-meta-grid">
+              <div className="modal-meta-item"><strong>Agent</strong>{incident.agentName} ({incident.agent})</div>
+              <div className="modal-meta-item"><strong>Opened</strong>{incident.opened}</div>
+              <div className="modal-meta-item"><strong>Severity</strong>{incident.severity}</div>
+              <div className="modal-meta-item"><strong>Framework</strong>{incident.framework}</div>
+            </div>
+          </div>
+
+          <div className="modal-section">
+            <div className="modal-section-title">Incident Timeline</div>
+            <div className="timeline-list">
+              {incident.timeline.map((t, i) => (
+                <div key={i} className="timeline-item">
+                  <span className="timeline-ts">{t.ts}</span>
+                  <span className="timeline-dot" />
+                  <span className="timeline-event">{t.event}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// MAIN COMPONENT
+// ===========================================================================
+
+function AgentGovernanceConsole() {
+  const [tab, setTab] = useState("registry");
+  const [agents, setAgents] = useState(initialAgents);
+  const [selectedAgent, setSelectedAgent] = useState(null);
+  const [selectedIncident, setSelectedIncident] = useState(null);
+
+  const totalAgents = agents.length;
+  const activeAgents = agents.filter(a => a.status === "Active").length;
+
+  const allActions = agents.flatMap(a => a.actions || []);
+  const blockedCount = allActions.filter(a => a.outcome === "Blocked").length;
+  const pendingCount = allActions.filter(a => a.outcome === "Pending Approval").length + incidents.filter(i => i.status === "Under Review").length;
+
+  const toggleStatus = (id) => {
+    setAgents(agents.map(a => a.id === id ? { ...a, status: a.status === "Active" ? "Paused" : "Active" } : a));
+  };
+
+  const killAgent = (id) => {
+    setAgents(agents.map(a => a.id === id ? { ...a, status: "Killed" } : a));
+  };
+
+  // Keep selected agent in sync with state changes
+  const liveSelectedAgent = selectedAgent ? agents.find(a => a.id === selectedAgent.id) : null;
+
+  return (
+    <>
+      <style>{styles}</style>
+      <div className="acg-root">
+        <header className="acg-header">
+          <div className="acg-logo">AI<span>/</span>Gov · Agent Console</div>
+          <div className="acg-badge">PROTOTYPE v0.2</div>
+          <div className="acg-status-dot" />
+          <div className="acg-live">LIVE</div>
+        </header>
+
+        <div className="acg-metrics">
+          <div className="metric-card">
+            <div className="metric-label">Registered Agents</div>
+            <div className="metric-value">{totalAgents}</div>
+            <div className="metric-sub">{activeAgents} active</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Actions (24h)</div>
+            <div className="metric-value">{allActions.length * 32}</div>
+            <div className="metric-sub">across all agents</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Blocked</div>
+            <div className="metric-value warn">{blockedCount * 5}</div>
+            <div className="metric-sub">prevented by guardrails</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Pending Review</div>
+            <div className="metric-value danger">{pendingCount}</div>
+            <div className="metric-sub">requires human approval</div>
+          </div>
+        </div>
+
+        <div className="acg-tabs">
+          <button className={`tab-btn${tab === "registry" ? " active" : ""}`} onClick={() => setTab("registry")}>
+            Agent Registry <span className="tab-count">{agents.length}</span>
+          </button>
+          <button className={`tab-btn${tab === "incidents" ? " active" : ""}`} onClick={() => setTab("incidents")}>
+            Incidents <span className="tab-count">{incidents.length}</span>
+          </button>
+          <button className={`tab-btn${tab === "compliance" ? " active" : ""}`} onClick={() => setTab("compliance")}>
+            Compliance
+          </button>
+        </div>
+
+        <div className="acg-body">
+          {tab === "registry" && (
+            <>
+              <div className="section-head">
+                <div>
+                  <div className="section-title">Agent Registry</div>
+                  <div className="section-sub">Click any agent to drill into permissions, recent actions, and the decision trace for every allow / block decision.</div>
+                </div>
+              </div>
+              <div className="agent-grid">
+                {agents.map(a => (
+                  <div key={a.id} className="agent-card" onClick={() => setSelectedAgent(a)}>
+                    <div>
+                      <div className="agent-id">{a.id} · {a.autonomyLevel}</div>
+                      <div className="agent-name">{a.name}</div>
+                      <div className="agent-purpose">{a.purpose}</div>
+                      <div className="agent-meta">
+                        <span><strong>Owner:</strong> {a.owner}</span>
+                        <span><strong>Last activity:</strong> {a.lastActivity}</span>
+                        <span><strong>Today:</strong> {a.actionsToday} actions · {a.flaggedToday} flagged</span>
+                      </div>
+                      <div className="perms-row">
+                        <span className="perm-label">Allowed</span>
+                        {a.permissions.slice(0, 3).map(p => <span key={p} className="perm-chip perm-allow">{p}</span>)}
+                      </div>
+                      <div className="perms-row">
+                        <span className="perm-label">Blocked</span>
+                        {a.blocked.slice(0, 3).map(p => <span key={p} className="perm-chip perm-block">{p}</span>)}
+                      </div>
+                      <div className="click-hint">→ Click for full decision trace</div>
+                    </div>
+
+                    <div className="agent-side">
+                      <span className={`status-pill status-${a.status}`}>{a.status}</span>
+                      <span className={`risk-pill risk-${a.riskTier}`}>{a.riskTier} Risk</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {tab === "incidents" && (
+            <>
+              <div className="section-head">
+                <div>
+                  <div className="section-title">Incidents</div>
+                  <div className="section-sub">Click any incident to see the full timeline and resolution path.</div>
+                </div>
+              </div>
+              {incidents.map(inc => (
+                <div key={inc.id} className={`incident-card severity-${inc.severity}`} onClick={() => setSelectedIncident(inc)}>
+                  <div className="incident-head">
+                    <span className="incident-id">{inc.id} · {inc.severity}</span>
+                    <span className={`status-pill status-${inc.status === "Under Review" ? "Paused" : "Active"}`}>
+                      {inc.status}
+                    </span>
+                  </div>
+                  <div className="incident-title">{inc.title}</div>
+                  <div className="incident-detail">{inc.detail}</div>
+                  <div className="incident-meta">
+                    <span><strong>Agent:</strong> {inc.agentName}</span>
+                    <span><strong>Opened:</strong> {inc.opened}</span>
+                    <span><strong>Framework:</strong> {inc.framework}</span>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+
+          {tab === "compliance" && (
+            <>
+              <div className="section-head">
+                <div>
+                  <div className="section-title">Framework Compliance</div>
+                  <div className="section-sub">Mapping of platform controls to the Singapore Model AI Governance Framework for Agentic AI (Jan 2026) and the NIST AI RMF Manage function.</div>
+                </div>
+              </div>
+
+              <div className="framework-grid">
+                <div className="framework-block">
+                  <div className="framework-block-title">Singapore Agentic AI Framework</div>
+                  <div className="framework-dim">
+                    <div className="framework-dim-name">1. Risk Assessment</div>
+                    <div className="framework-dim-desc">Use-case-specific evaluations considering autonomy level, data access scope, and action authority.</div>
+                    <div className="framework-status"><span className="framework-status-dot" />Implemented · Risk tier per agent</div>
+                  </div>
+                  <div className="framework-dim">
+                    <div className="framework-dim-name">2. Human Accountability</div>
+                    <div className="framework-dim-desc">Clear ownership and responsibility chains for agent behaviors.</div>
+                    <div className="framework-status"><span className="framework-status-dot" />Implemented · Owner + contact per agent</div>
+                  </div>
+                  <div className="framework-dim">
+                    <div className="framework-dim-name">3. Technical Controls</div>
+                    <div className="framework-dim-desc">Kill switches, purpose binding, and behavior monitoring.</div>
+                    <div className="framework-status"><span className="framework-status-dot" />Implemented · Kill switch + permission scoping + audit log</div>
+                  </div>
+                  <div className="framework-dim">
+                    <div className="framework-dim-name">4. End-User Responsibility</div>
+                    <div className="framework-dim-desc">Guidelines for users interacting with autonomous agents.</div>
+                    <div className="framework-status"><span className="framework-status-dot" />Documented · Stated purpose per agent</div>
+                  </div>
+                </div>
+
+                <div className="framework-block">
+                  <div className="framework-block-title">NIST AI RMF · Manage</div>
+                  <div className="framework-dim">
+                    <div className="framework-dim-name">MANAGE 1.1 - Action prioritization</div>
+                    <div className="framework-dim-desc">Higher-risk agent actions are prioritized for review and require human approval before execution.</div>
+                    <div className="framework-status"><span className="framework-status-dot" />Implemented · Approval workflow</div>
+                  </div>
+                  <div className="framework-dim">
+                    <div className="framework-dim-name">MANAGE 2.4 - Response and recovery</div>
+                    <div className="framework-dim-desc">Pause and kill mechanisms available for any registered agent at runtime.</div>
+                    <div className="framework-status"><span className="framework-status-dot" />Implemented · One-click controls</div>
+                  </div>
+                  <div className="framework-dim">
+                    <div className="framework-dim-name">MANAGE 4.1 - Post-deployment monitoring</div>
+                    <div className="framework-dim-desc">Continuous logging and monitoring of agent actions, with anomaly detection driving incident creation.</div>
+                    <div className="framework-status"><span className="framework-status-dot" />Implemented · Action log + incidents</div>
+                  </div>
+                  <div className="framework-dim">
+                    <div className="framework-dim-name">MANAGE 4.3 - Incident response</div>
+                    <div className="framework-dim-desc">Defined incident lifecycle from detection through review and resolution.</div>
+                    <div className="framework-status"><span className="framework-status-dot" />Implemented · Incident register</div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {liveSelectedAgent && (
+          <AgentDetailModal
+            agent={liveSelectedAgent}
+            onClose={() => setSelectedAgent(null)}
+            onPause={toggleStatus}
+            onKill={killAgent}
+          />
+        )}
+
+        {selectedIncident && (
+          <IncidentDetailModal
+            incident={selectedIncident}
+            onClose={() => setSelectedIncident(null)}
+          />
+        )}
+      </div>
+    </>
+  );
+}
+
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(React.createElement(AgentGovernanceConsole));
+  </script>
+</body>
+</html>

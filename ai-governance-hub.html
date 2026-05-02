@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AI/Gov · Use Case Intake</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #080c14; }
+    @media print {
+      .hub-header, .progress-bar, .examples-bar, .btn-row, .restart-btn { display: none !important; }
+      body, .hub-root { background: white !important; color: #0f172a !important; }
+      .hub-body { max-width: 100% !important; padding: 20px !important; }
+      .hub-title { color: #0f172a !important; }
+      .form-card { background: white !important; border: 1px solid #cbd5e1 !important; box-shadow: none !important; }
+      .framework-card { background: #f8fafc !important; border-color: #cbd5e1 !important; }
+      .framework-tier, .hub-title { color: #0f172a !important; }
+      .framework-desc, .risk-item, .control-item { color: #334155 !important; }
+      .section-label { color: #0369a1 !important; }
+      .approval-banner { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      .risk-badge-large { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState } = React;
+
+// ============================================================
+// FORM DEFINITIONS
+// ============================================================
+const STEPS = ["Basics", "Data & Privacy", "Impact", "Deployment", "Assessment"];
+
+const questions = {
+  basics: [
+    { id: "name", label: "Use Case Name", type: "text", placeholder: "e.g. Customer Churn Predictor" },
+    { id: "department", label: "Submitting Team / Department", type: "text", placeholder: "e.g. Data & AI Platform" },
+    { id: "description", label: "Describe the AI use case", type: "textarea", placeholder: "What does this system do, and what problem does it solve?" },
+    { id: "ai_type", label: "Type of AI System", type: "select", options: ["Predictive / ML Model","Generative AI (LLM)","Computer Vision","NLP / Text Classification","Recommendation System","Autonomous Agent","Other"] },
+  ],
+  data: [
+    { id: "pii", label: "Does this system process Personally Identifiable Information (PII)?", type: "radio", options: ["Yes","No","Uncertain"] },
+    { id: "sensitive_data", label: "Does it involve sensitive categories (health, finance, race, religion, biometrics)?", type: "radio", options: ["Yes","No","Uncertain"] },
+    { id: "data_source", label: "Where does training / inference data come from?", type: "textarea", placeholder: "e.g. internal CRM data, third-party purchased data, public web data..." },
+    { id: "data_consent", label: "Is there documented consent or legal basis for data use?", type: "radio", options: ["Yes","No","In Progress"] },
+  ],
+  impact: [
+    { id: "audience", label: "Who is directly impacted by the system's outputs?", type: "text", placeholder: "e.g. customers, employees, job applicants..." },
+    { id: "automated_decision", label: "Will the system make or significantly influence automated decisions about people?", type: "radio", options: ["Yes - fully automated","Yes - human in the loop","No"] },
+    { id: "adverse_impact", label: "Could errors or bias cause harm to individuals or groups?", type: "radio", options: ["High potential harm","Moderate potential harm","Low potential harm"] },
+    { id: "scale", label: "Estimated number of people affected per month", type: "select", options: ["< 1,000","1,000 - 100,000","100,000 - 1M","> 1M"] },
+  ],
+  deployment: [
+    { id: "environment", label: "Target deployment environment", type: "select", options: ["Production (customer-facing)","Production (internal only)","Pilot / Limited Beta","Research / Sandbox"] },
+    { id: "monitoring", label: "Is there a model monitoring plan in place?", type: "radio", options: ["Yes - defined","Planned but not defined","No"] },
+    { id: "explainability", label: "Can the system's decisions be explained to affected individuals?", type: "radio", options: ["Yes - fully explainable","Partially explainable","Black box"] },
+    { id: "rollback", label: "Is there a rollback / shutdown procedure defined?", type: "radio", options: ["Yes","In Progress","No"] },
+  ],
+};
+
+const sectionKeys = ["basics","data","impact","deployment"];
+const sectionTitles = { basics:"Use Case Basics", data:"Data & Privacy", impact:"Impact Assessment", deployment:"Deployment Readiness" };
+
+const EXAMPLES = {
+  low: {
+    label: "Low Risk · Internal Code Search",
+    answers: { name:"Engineering Knowledge Search", department:"Developer Productivity", description:"Semantic search over internal engineering documentation and code repositories. Helps engineers find relevant prior art and architectural decisions.", ai_type:"NLP / Text Classification", pii:"No", sensitive_data:"No", data_source:"Internal engineering wikis, design docs, and Git repositories. Access-controlled, limited to engineering staff.", data_consent:"Yes", audience:"Internal engineers only", automated_decision:"No", adverse_impact:"Low potential harm", scale:"< 1,000", environment:"Production (internal only)", monitoring:"Yes - defined", explainability:"Yes - fully explainable", rollback:"Yes" },
+  },
+  high: {
+    label: "High Risk · Churn Predictor",
+    answers: { name:"Customer Churn Prediction Model", department:"Growth & Retention", description:"Predicts which customers are at risk of churning over the next 30 days. Retention team uses scores to prioritize proactive outreach.", ai_type:"Predictive / ML Model", pii:"Yes", sensitive_data:"No", data_source:"Customer CRM data, billing history, support tickets, and product usage telemetry. Governed under existing customer ToS.", data_consent:"Yes", audience:"Customers (indirectly via retention outreach)", automated_decision:"Yes - human in the loop", adverse_impact:"Moderate potential harm", scale:"100,000 - 1M", environment:"Production (internal only)", monitoring:"Planned but not defined", explainability:"Partially explainable", rollback:"In Progress" },
+  },
+  critical: {
+    label: "Critical Risk · Resume Screener",
+    answers: { name:"Automated Resume Screener", department:"Talent Acquisition", description:"Screens incoming resumes and ranks candidates. Top-ranked are auto-advanced; bottom-ranked receive automated rejection emails.", ai_type:"NLP / Text Classification", pii:"Yes", sensitive_data:"Uncertain", data_source:"Historical hiring decisions over 5 years and incoming resumes scraped from job boards.", data_consent:"In Progress", audience:"Job applicants", automated_decision:"Yes - fully automated", adverse_impact:"High potential harm", scale:"100,000 - 1M", environment:"Production (customer-facing)", monitoring:"No", explainability:"Black box", rollback:"No" },
+  },
+};
+
+// ============================================================
+// GOVERNANCE RULE ENGINE
+// ============================================================
+function computeAssessment(a) {
+  let score = 0;
+  if (a.pii === "Yes") score += 2;
+  if (a.pii === "Uncertain") score += 1;
+  if (a.sensitive_data === "Yes") score += 3;
+  if (a.sensitive_data === "Uncertain") score += 1;
+  if (a.data_consent === "No") score += 2;
+  if (a.data_consent === "In Progress") score += 1;
+  if (a.automated_decision === "Yes - fully automated") score += 3;
+  if (a.automated_decision === "Yes - human in the loop") score += 1;
+  if (a.adverse_impact === "High potential harm") score += 3;
+  if (a.adverse_impact === "Moderate potential harm") score += 1;
+  if (a.scale === "> 1M") score += 2;
+  if (a.scale === "100,000 - 1M") score += 1;
+  if (a.environment === "Production (customer-facing)") score += 2;
+  if (a.environment === "Production (internal only)") score += 1;
+  if (a.monitoring === "No") score += 2;
+  if (a.monitoring === "Planned but not defined") score += 1;
+  if (a.explainability === "Black box") score += 2;
+  if (a.explainability === "Partially explainable") score += 1;
+  if (a.rollback === "No") score += 1;
+  if (a.ai_type === "Autonomous Agent") score += 2;
+  if (a.ai_type === "Generative AI (LLM)") score += 1;
+
+  let risk_level;
+  if (score >= 14) risk_level = "Critical";
+  else if (score >= 9) risk_level = "High";
+  else if (score >= 5) risk_level = "Medium";
+  else risk_level = "Low";
+
+  // EU AI Act
+  let eu_class, eu_article, eu_notes;
+  const isHighRisk = a.automated_decision === "Yes - fully automated" && (a.adverse_impact === "High potential harm" || a.sensitive_data === "Yes");
+  const isGenAI = a.ai_type === "Generative AI (LLM)" && a.environment === "Production (customer-facing)";
+  if (isHighRisk || (a.automated_decision === "Yes - fully automated" && a.sensitive_data === "Yes")) {
+    eu_class = "High Risk"; eu_article = "Article 6 + Annex III - High-Risk AI Systems";
+    eu_notes = "System makes automated decisions with significant individual impact. Subject to conformity assessment, risk management system, and post-market monitoring.";
+  } else if (a.automated_decision === "Yes - fully automated" || a.sensitive_data === "Yes") {
+    eu_class = "High Risk"; eu_article = "Annex III - High-Risk Use Cases";
+    eu_notes = "Automated decision-making or sensitive data categories trigger high-risk obligations.";
+  } else if (isGenAI) {
+    eu_class = "Limited Risk"; eu_article = "Article 50 - Transparency Obligations";
+    eu_notes = "Customer-facing generative AI requires clear disclosure that users are interacting with an AI system.";
+  } else if (a.environment === "Research / Sandbox" || a.scale === "< 1,000") {
+    eu_class = "Minimal Risk"; eu_article = "Recital 165 - Voluntary Codes";
+    eu_notes = "Limited scope and impact. Voluntary adherence to codes of conduct recommended.";
+  } else {
+    eu_class = "Limited Risk"; eu_article = "Article 50 - Transparency Obligations";
+    eu_notes = "System interacts with people but doesn't make high-stakes decisions. Transparency obligations apply.";
+  }
+
+  // NIST AI RMF Tier
+  let controls = 0;
+  if (a.monitoring === "Yes - defined") controls++;
+  if (a.explainability === "Yes - fully explainable") controls++;
+  if (a.rollback === "Yes") controls++;
+  if (a.data_consent === "Yes") controls++;
+  let nist_tier, nist_notes;
+  if (controls >= 4) { nist_tier = "Tier 4 - Adaptive"; nist_notes = "Comprehensive governance controls in place. Organization actively measures and improves AI risk on a continuous basis."; }
+  else if (controls === 3) { nist_tier = "Tier 3 - Repeatable"; nist_notes = "Governance controls are documented and consistently applied. Risk management practices are formalized."; }
+  else if (controls === 2) { nist_tier = "Tier 2 - Risk Informed"; nist_notes = "Some governance controls exist but are not fully consistent. Risk awareness present but not yet repeatable."; }
+  else { nist_tier = "Tier 1 - Partial"; nist_notes = "Limited governance controls. AI risk practices are ad hoc and require formalization before production deployment."; }
+
+  const nist_functions = ["Govern","Map"];
+  if (a.monitoring !== "No") nist_functions.push("Measure");
+  if (a.rollback !== "No") nist_functions.push("Manage");
+
+  // Key risks
+  const key_risks = [];
+  if (a.pii === "Yes" && a.data_consent !== "Yes") key_risks.push("Privacy risk: PII processing without confirmed legal basis (GDPR Art. 6, CCPA)");
+  if (a.sensitive_data === "Yes") key_risks.push("Discrimination risk: Sensitive data categories may produce disparate impact across protected groups");
+  if (a.automated_decision === "Yes - fully automated" && a.explainability === "Black box") key_risks.push("Due process risk: Affected individuals cannot understand or contest automated decisions");
+  if (a.adverse_impact === "High potential harm") key_risks.push("Material harm risk: Errors or bias could cause significant harm to individuals or groups");
+  if (a.monitoring === "No" && a.environment && a.environment.includes("Production")) key_risks.push("Drift risk: Production deployment without monitoring leaves model degradation undetected");
+  if (a.rollback === "No") key_risks.push("Operational risk: No defined rollback procedure if the system fails or causes harm");
+  if (a.ai_type === "Generative AI (LLM)" && a.environment === "Production (customer-facing)") key_risks.push("Transparency risk: Users may not know they are interacting with AI (EU AI Act Art. 50)");
+  if (a.ai_type === "Autonomous Agent") key_risks.push("Autonomy risk: Agent systems can take unintended actions - requires bounded permissions and audit logs");
+  if (key_risks.length === 0) { key_risks.push("No critical risks identified in current submission"); key_risks.push("Continue standard governance review cadence"); }
+
+  // Recommended controls
+  const rec = [];
+  if (a.pii === "Yes" || a.sensitive_data === "Yes") rec.push("Conduct a Data Protection Impact Assessment (DPIA) before deployment");
+  if (a.data_consent !== "Yes") rec.push("Document legal basis for data processing and obtain explicit consent where required");
+  if (a.automated_decision === "Yes - fully automated") rec.push("Implement human review workflow for high-stakes decisions and a right-to-explanation process");
+  if (a.explainability !== "Yes - fully explainable") rec.push("Add model explainability tooling (SHAP, LIME, or model cards) to surface decision rationale");
+  if (a.monitoring !== "Yes - defined") rec.push("Define and deploy a model monitoring plan covering drift, performance, and bias metrics");
+  if (a.rollback !== "Yes") rec.push("Document a rollback and incident response procedure with clear ownership and SLAs");
+  if (a.adverse_impact === "High potential harm") rec.push("Run a pre-deployment bias and fairness audit across protected demographic groups");
+  if (a.ai_type === "Generative AI (LLM)") rec.push("Implement output filtering, prompt injection defenses, and AI-generated content disclosure");
+  if (a.ai_type === "Autonomous Agent") rec.push("Bound agent permissions, enable full action audit logging, require approval for irreversible actions");
+  if (a.scale === "> 1M" || a.scale === "100,000 - 1M") rec.push("Establish a model risk committee with quarterly review and re-certification");
+  if (rec.length === 0) { rec.push("Maintain documentation per ISO/IEC 42001 AI management system requirements"); rec.push("Continue standard model lifecycle governance"); }
+
+  // Approval
+  let approval_status, approval_rationale;
+  if (risk_level === "Critical" || eu_class === "High Risk") {
+    approval_status = "Escalate to AI Review Board";
+    approval_rationale = `This use case meets the threshold for AI Review Board escalation due to ${eu_class === "High Risk" ? "EU AI Act High Risk classification" : "Critical residual risk score"}. Submit a full conformity assessment and risk management plan before any production deployment. Board sign-off is mandatory.`;
+  } else if (risk_level === "High") {
+    approval_status = "Conditional Approval";
+    approval_rationale = "Approved subject to implementation of all recommended controls above. The team must demonstrate evidence of each control before progressing to production, with a follow-up review at 90 days post-launch.";
+  } else if (risk_level === "Medium") {
+    approval_status = "Conditional Approval";
+    approval_rationale = "Approved with standard governance conditions. Implement recommended controls and complete documentation per ISO/IEC 42001. Self-attestation review is acceptable in lieu of full board review.";
+  } else {
+    approval_status = "Approved";
+    approval_rationale = "This use case presents low residual risk. Standard development practices apply. Maintain governance documentation for audit purposes.";
+  }
+
+  return { risk_level, risk_score: score, nist_ai_rmf: { tier: nist_tier, primary_functions: nist_functions, notes: nist_notes }, eu_ai_act: { classification: eu_class, article_reference: eu_article, notes: eu_notes }, key_risks, recommended_controls: rec, approval_status, approval_rationale };
+}
+
+// ============================================================
+// STYLES
+// ============================================================
+const css = `
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #080c14; }
+  .hub-root { min-height: 100vh; background: #080c14; color: #e2e8f4; font-family: 'DM Sans', sans-serif; }
+  .hub-header { border-bottom: 1px solid #1a2235; padding: 18px 36px; display: flex; align-items: center; gap: 14px; background: #0a0f1c; }
+  .hub-logo { font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; color: #38bdf8; letter-spacing: .12em; text-transform: uppercase; }
+  .hub-logo span { color: #64748b; }
+  .hub-badge { font-family: 'Space Mono', monospace; font-size: 10px; padding: 3px 8px; border: 1px solid #1e3a5f; border-radius: 3px; color: #38bdf8; background: #0c1929; letter-spacing: .1em; }
+  .hub-body { max-width: 780px; margin: 0 auto; padding: 48px 24px 80px; }
+  .hub-title { font-family: 'Space Mono', monospace; font-size: 22px; font-weight: 700; color: #f1f5f9; margin-bottom: 6px; }
+  .hub-subtitle { font-size: 14px; color: #64748b; margin-bottom: 40px; line-height: 1.5; }
+  .progress-bar { display: flex; align-items: center; margin-bottom: 40px; }
+  .progress-step { display: flex; align-items: center; gap: 8px; flex: 1; }
+  .progress-step:last-child { flex: none; }
+  .step-dot { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700; flex-shrink: 0; border: 1.5px solid #1e2d42; background: #0d1525; color: #475569; transition: all .3s; }
+  .step-dot.active { background: #0c2d4d; border-color: #38bdf8; color: #38bdf8; box-shadow: 0 0 0 3px #38bdf81a; }
+  .step-dot.done { background: #064e3b; border-color: #10b981; color: #10b981; }
+  .step-label { font-size: 11px; font-family: 'Space Mono', monospace; color: #475569; letter-spacing: .05em; white-space: nowrap; }
+  .step-label.active { color: #38bdf8; } .step-label.done { color: #10b981; }
+  .step-line { flex: 1; height: 1px; background: #1e2d42; margin: 0 8px; }
+  .step-line.done { background: #10b981; }
+  .examples-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; padding: 12px 16px; background: #0a1525; border: 1px dashed #1e3a5f; border-radius: 8px; }
+  .examples-label { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: .12em; color: #64748b; text-transform: uppercase; }
+  .example-chip { background: #0d1525; border: 1px solid #1e2d42; color: #94a3b8; padding: 6px 12px; font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; border-radius: 4px; cursor: pointer; transition: all .15s; }
+  .example-chip:hover { border-color: #38bdf8; color: #38bdf8; background: #0c2034; }
+  .example-low:hover { border-color: #10b981; color: #10b981; }
+  .example-high:hover { border-color: #f97316; color: #f97316; }
+  .example-critical:hover { border-color: #ef4444; color: #ef4444; }
+  .form-card { background: #0d1525; border: 1px solid #1a2840; border-radius: 10px; padding: 32px; margin-bottom: 24px; }
+  .section-label { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: .15em; color: #38bdf8; text-transform: uppercase; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+  .section-label::after { content: ''; flex: 1; height: 1px; background: #1a2840; }
+  .field-group { margin-bottom: 22px; }
+  .field-label { font-size: 13px; font-weight: 500; color: #94a3b8; margin-bottom: 8px; display: block; }
+  .field-input { width: 100%; background: #080c14; border: 1px solid #1e2d42; border-radius: 6px; padding: 10px 14px; font-family: 'DM Sans', sans-serif; font-size: 14px; color: #e2e8f4; outline: none; transition: border-color .2s; }
+  .field-input:focus { border-color: #38bdf8; }
+  .field-textarea { min-height: 90px; resize: vertical; }
+  .field-select { appearance: none; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
+  .field-select option { background: #0d1525; }
+  .radio-group { display: flex; flex-direction: column; gap: 8px; }
+  .radio-option { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border: 1px solid #1e2d42; border-radius: 6px; cursor: pointer; transition: all .15s; background: #080c14; }
+  .radio-option:hover { border-color: #2d4a6b; background: #0a1020; }
+  .radio-option.selected { border-color: #38bdf8; background: #0c2034; }
+  .radio-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #334155; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all .15s; }
+  .radio-option.selected .radio-dot { border-color: #38bdf8; }
+  .radio-inner { width: 6px; height: 6px; border-radius: 50%; background: #38bdf8; display: none; }
+  .radio-option.selected .radio-inner { display: block; }
+  .radio-text { font-size: 13px; color: #94a3b8; }
+  .radio-option.selected .radio-text { color: #e2e8f4; }
+  .btn-row { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+  .btn { padding: 11px 28px; border-radius: 6px; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; border: none; transition: all .2s; letter-spacing: .01em; }
+  .btn-primary { background: #38bdf8; color: #080c14; }
+  .btn-primary:hover { background: #7dd3fc; }
+  .btn-primary:disabled { background: #1e3a52; color: #475569; cursor: not-allowed; }
+  .btn-secondary { background: transparent; color: #64748b; border: 1px solid #1e2d42; }
+  .btn-secondary:hover { border-color: #334155; color: #94a3b8; }
+  .btn-submit { background: linear-gradient(135deg,#38bdf8,#6366f1); color: white; padding: 13px 36px; font-size: 15px; }
+  .btn-submit:hover { opacity: .9; transform: translateY(-1px); }
+  .btn-submit:disabled { background: #1e2d42; color: #475569; cursor: not-allowed; transform: none; }
+  .btn-download { background: #0d1525; color: #38bdf8; border: 1px solid #38bdf8; padding: 11px 24px; }
+  .btn-download:hover { background: #0c2034; }
+  .loading-state { text-align: center; padding: 60px 20px; }
+  .spinner { width: 40px; height: 40px; border: 3px solid #1e2d42; border-top-color: #38bdf8; border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 20px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-family: 'Space Mono', monospace; font-size: 13px; color: #38bdf8; letter-spacing: .1em; }
+  .loading-sub { font-size: 12px; color: #475569; margin-top: 6px; }
+  .assessment-header { text-align: center; margin-bottom: 32px; }
+  .risk-badge-large { display: inline-flex; align-items: center; gap: 10px; padding: 12px 24px; border-radius: 8px; font-family: 'Space Mono', monospace; font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 12px; }
+  .risk-critical { background: #2d0a0a; border: 1px solid #ef4444; color: #ef4444; }
+  .risk-high { background: #2d1a0a; border: 1px solid #f97316; color: #f97316; }
+  .risk-medium { background: #2d250a; border: 1px solid #eab308; color: #eab308; }
+  .risk-low { background: #0a2d1a; border: 1px solid #10b981; color: #10b981; }
+  .framework-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .framework-card { background: #080c14; border: 1px solid #1a2840; border-radius: 8px; padding: 16px; }
+  .framework-name { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: .12em; color: #38bdf8; text-transform: uppercase; margin-bottom: 6px; }
+  .framework-tier { font-size: 15px; font-weight: 600; color: #f1f5f9; margin-bottom: 4px; }
+  .framework-desc { font-size: 12px; color: #64748b; line-height: 1.4; }
+  .risk-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .risk-item, .control-item { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: #94a3b8; line-height: 1.5; }
+  .risk-item-dot { width: 6px; height: 6px; border-radius: 50%; background: #f97316; margin-top: 6px; flex-shrink: 0; }
+  .control-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; margin-top: 6px; flex-shrink: 0; }
+  .approval-banner { border-radius: 8px; padding: 16px 20px; display: flex; align-items: center; gap: 14px; margin-top: 20px; }
+  .approval-approved { background: #062a1a; border: 1px solid #10b981; }
+  .approval-conditional { background: #2a1e06; border: 1px solid #eab308; }
+  .approval-escalate { background: #2a0808; border: 1px solid #ef4444; }
+  .approval-icon { font-size: 22px; }
+  .approval-title { font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 2px; }
+  .approval-approved .approval-title { color: #10b981; }
+  .approval-conditional .approval-title { color: #eab308; }
+  .approval-escalate .approval-title { color: #ef4444; }
+  .approval-desc { font-size: 13px; color: #94a3b8; line-height: 1.4; }
+  .restart-btn { margin-top: 24px; display: flex; justify-content: center; gap: 12px; }
+  @media(max-width:600px){
+    .framework-row{grid-template-columns:1fr}
+    .hub-body{padding:24px 16px 60px}
+    .step-label{display:none}
+  }
+`;
+
+// ============================================================
+// FORM FIELD COMPONENT
+// ============================================================
+function FormField({ field, value, onChange }) {
+  if (field.type === "text") return (
+    <div className="field-group">
+      <label className="field-label">{field.label}</label>
+      <input className="field-input" placeholder={field.placeholder} value={value||""} onChange={e=>onChange(field.id,e.target.value)}/>
+    </div>
+  );
+  if (field.type === "textarea") return (
+    <div className="field-group">
+      <label className="field-label">{field.label}</label>
+      <textarea className="field-input field-textarea" placeholder={field.placeholder} value={value||""} onChange={e=>onChange(field.id,e.target.value)}/>
+    </div>
+  );
+  if (field.type === "select") return (
+    <div className="field-group">
+      <label className="field-label">{field.label}</label>
+      <select className="field-input field-select" value={value||""} onChange={e=>onChange(field.id,e.target.value)}>
+        <option value="">Select an option...</option>
+        {field.options.map(o=><option key={o} value={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+  if (field.type === "radio") return (
+    <div className="field-group">
+      <label className="field-label">{field.label}</label>
+      <div className="radio-group">
+        {field.options.map(o=>(
+          <div key={o} className={`radio-option${value===o?" selected":""}`} onClick={()=>onChange(field.id,o)}>
+            <div className="radio-dot"><div className="radio-inner"/></div>
+            <span className="radio-text">{o}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+  return null;
+}
+
+// ============================================================
+// MAIN APP
+// ============================================================
+function App() {
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [assessment, setAssessment] = useState(null);
+
+  const handleChange = (id,val) => setAnswers(a=>({...a,[id]:val}));
+  const currentSection = sectionKeys[step];
+  const currentQuestions = questions[currentSection]||[];
+  const canProceed = currentQuestions.every(q=>answers[q.id]);
+
+  const runAssessment = () => {
+    setLoading(true);
+    setTimeout(()=>{ setAssessment(computeAssessment(answers)); setStep(4); setLoading(false); }, 900);
+  };
+
+  const reset = () => { setStep(0); setAnswers({}); setAssessment(null); setLoading(false); };
+
+  const getRiskClass = l => { if(!l)return"risk-medium"; const lc=l.toLowerCase(); if(lc.includes("critical"))return"risk-critical"; if(lc.includes("high"))return"risk-high"; if(lc.includes("medium"))return"risk-medium"; return"risk-low"; };
+  const getApprovalClass = s => { if(!s)return"approval-conditional"; const sc=s.toLowerCase(); if(sc.includes("escalate"))return"approval-escalate"; if(sc.includes("conditional"))return"approval-conditional"; return"approval-approved"; };
+  const getApprovalIcon = s => { if(!s)return"⚠️"; const sc=s.toLowerCase(); if(sc.includes("escalate"))return"🚨"; if(sc.includes("conditional"))return"⚠️"; return"✅"; };
+
+  return (
+    <>
+      <style>{css}</style>
+      <div className="hub-root">
+        <header className="hub-header">
+          <div className="hub-logo">AI<span>/</span>Gov</div>
+          <div className="hub-badge">PROTOTYPE v0.1</div>
+        </header>
+
+        <div className="hub-body">
+          <div className="hub-title">AI Use Case Intake</div>
+          <div className="hub-subtitle">Submit an AI system for governance review. Your submission will be assessed against NIST AI RMF and EU AI Act frameworks.</div>
+
+          <div className="progress-bar">
+            {STEPS.map((s,i)=>(
+              <div key={s} className="progress-step" style={{flex:i<STEPS.length-1?1:'none'}}>
+                <div className={`step-dot${i===step?" active":""}${i<step?" done":""}`}>{i<step?"✓":i+1}</div>
+                <span className={`step-label${i===step?" active":""}${i<step?" done":""}`}>{s}</span>
+                {i<STEPS.length-1&&<div className={`step-line${i<step?" done":""}`}/>}
+              </div>
+            ))}
+          </div>
+
+          {step===0&&!loading&&(
+            <div className="examples-bar">
+              <span className="examples-label">Quick Demo:</span>
+              {Object.entries(EXAMPLES).map(([key,ex])=>(
+                <button key={key} className={`example-chip example-${key}`} onClick={()=>setAnswers(ex.answers)}>{ex.label}</button>
+              ))}
+            </div>
+          )}
+
+          {step<4&&!loading&&(
+            <div className="form-card">
+              <div className="section-label">{sectionTitles[currentSection]}</div>
+              {currentQuestions.map(q=><FormField key={q.id} field={q} value={answers[q.id]} onChange={handleChange}/>)}
+              <div className="btn-row">
+                {step>0?<button className="btn btn-secondary" onClick={()=>setStep(s=>s-1)}>Back</button>:<span/>}
+                {step<3
+                  ?<button className="btn btn-primary" onClick={()=>setStep(s=>s+1)} disabled={!canProceed}>Next</button>
+                  :<button className="btn btn-submit" onClick={runAssessment} disabled={!canProceed}>Run Governance Assessment</button>
+                }
+              </div>
+            </div>
+          )}
+
+          {loading&&(
+            <div className="form-card loading-state">
+              <div className="spinner"/>
+              <div className="loading-text">Analyzing Use Case...</div>
+              <div className="loading-sub">Mapping to NIST AI RMF · EU AI Act · ISO/IEC 42001</div>
+            </div>
+          )}
+
+          {step===4&&assessment&&(
+            <>
+              <div className="form-card">
+                <div className="section-label">Governance Assessment</div>
+                <div className="assessment-header">
+                  <div className={`risk-badge-large ${getRiskClass(assessment.risk_level)}`}>◈ {assessment.risk_level} Risk</div>
+                  <div style={{fontSize:13,color:"#64748b"}}>Use Case: <span style={{color:"#94a3b8"}}>{answers.name||"Unnamed"}</span> · {answers.department||""}</div>
+                </div>
+
+                <div className="framework-row">
+                  <div className="framework-card">
+                    <div className="framework-name">NIST AI RMF</div>
+                    <div className="framework-tier">{assessment.nist_ai_rmf?.tier}</div>
+                    <div style={{fontSize:11,color:"#38bdf8",marginBottom:6}}>{assessment.nist_ai_rmf?.primary_functions?.join(" · ")}</div>
+                    <div className="framework-desc">{assessment.nist_ai_rmf?.notes}</div>
+                  </div>
+                  <div className="framework-card">
+                    <div className="framework-name">EU AI Act</div>
+                    <div className="framework-tier">{assessment.eu_ai_act?.classification}</div>
+                    <div style={{fontSize:11,color:"#38bdf8",marginBottom:6}}>{assessment.eu_ai_act?.article_reference}</div>
+                    <div className="framework-desc">{assessment.eu_ai_act?.notes}</div>
+                  </div>
+                </div>
+
+                <div className="framework-card" style={{marginBottom:16}}>
+                  <div className="framework-name" style={{color:"#f97316"}}>Key Risks Identified</div>
+                  <ul className="risk-list" style={{marginTop:10}}>
+                    {assessment.key_risks?.map((r,i)=><li key={i} className="risk-item"><span className="risk-item-dot"/>{r}</li>)}
+                  </ul>
+                </div>
+
+                <div className="framework-card" style={{marginBottom:16}}>
+                  <div className="framework-name" style={{color:"#10b981"}}>Recommended Controls</div>
+                  <ul className="risk-list" style={{marginTop:10}}>
+                    {assessment.recommended_controls?.map((c,i)=><li key={i} className="control-item"><span className="control-dot"/>{c}</li>)}
+                  </ul>
+                </div>
+
+                <div className={`approval-banner ${getApprovalClass(assessment.approval_status)}`}>
+                  <span className="approval-icon">{getApprovalIcon(assessment.approval_status)}</span>
+                  <div>
+                    <div className="approval-title">{assessment.approval_status}</div>
+                    <div className="approval-desc">{assessment.approval_rationale}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="restart-btn">
+                <button className="btn btn-download" onClick={()=>window.print()}>↓ Download Report (PDF)</button>
+                <button className="btn btn-secondary" onClick={reset}>Submit Another Use Case</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
