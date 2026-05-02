@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AI/Gov · Bias & Fairness Audit Tool</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #080c14; }
+    @media print {
+      .fat-header, .upload-section, .demo-bar, .btn-row { display: none !important; }
+      body, .fat-root { background: white !important; color: #0f172a !important; }
+      .fat-body { padding: 20px !important; }
+      .result-card, .metric-card, .group-card { background: white !important; border-color: #cbd5e1 !important; }
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useCallback } = React;
+
+// ============================================================
+// SAMPLE DATASETS
+// ============================================================
+const SAMPLES = {
+  hiring: {
+    label: "Hiring Model · Gender Bias",
+    description: "Resume screening model, gender as protected attribute",
+    attribute: "gender",
+    groups: {
+      "Male":   { total: 400, positive_pred: 220, actual_positive: 210, true_positive: 190 },
+      "Female": { total: 350, positive_pred: 140, actual_positive: 175, true_positive: 120 },
+      "Non-binary": { total: 50, positive_pred: 22, actual_positive: 28, true_positive: 18 },
+    }
+  },
+  lending: {
+    label: "Lending Model · Race Bias",
+    description: "Credit approval model, race as protected attribute",
+    attribute: "race",
+    groups: {
+      "White":    { total: 500, positive_pred: 350, actual_positive: 340, true_positive: 320 },
+      "Black":    { total: 200, positive_pred: 90,  actual_positive: 110, true_positive: 80  },
+      "Hispanic": { total: 180, positive_pred: 95,  actual_positive: 100, true_positive: 82  },
+      "Asian":    { total: 120, positive_pred: 88,  actual_positive: 85,  true_positive: 78  },
+    }
+  },
+  healthcare: {
+    label: "Healthcare Risk Model · Age Bias",
+    description: "Patient risk scoring model, age group as protected attribute",
+    attribute: "age_group",
+    groups: {
+      "18-40":  { total: 300, positive_pred: 60,  actual_positive: 65,  true_positive: 52 },
+      "41-60":  { total: 400, positive_pred: 180, actual_positive: 190, true_positive: 165 },
+      "61-80":  { total: 350, positive_pred: 200, actual_positive: 210, true_positive: 185 },
+      "80+":    { total: 150, positive_pred: 105, actual_positive: 112, true_positive: 92  },
+    }
+  },
+};
+
+// ============================================================
+// FAIRNESS METRIC ENGINE
+// ============================================================
+function computeFairness(groups, attribute) {
+  const names = Object.keys(groups);
+
+  // Per-group rates
+  const groupStats = names.map(name => {
+    const g = groups[name];
+    const selection_rate = g.positive_pred / g.total;
+    const tpr = g.actual_positive > 0 ? g.true_positive / g.actual_positive : 0;
+    const fpr = (g.total - g.actual_positive) > 0
+      ? (g.positive_pred - g.true_positive) / (g.total - g.actual_positive)
+      : 0;
+    const precision = g.positive_pred > 0 ? g.true_positive / g.positive_pred : 0;
+    return { name, ...g, selection_rate, tpr, fpr, precision };
+  });
+
+  // Reference = highest selection rate group
+  const ref = groupStats.reduce((a,b) => a.selection_rate > b.selection_rate ? a : b);
+
+  // Metric computations
+  const results = groupStats.map(g => {
+    const dir = g.selection_rate > 0 ? ref.selection_rate / g.selection_rate : Infinity;
+    const dpd = g.selection_rate - ref.selection_rate;
+    const eod = g.tpr - ref.tpr;
+    return { ...g, disparate_impact_ratio: g === ref ? 1.0 : g.selection_rate / ref.selection_rate, demographic_parity_diff: dpd, equal_opportunity_diff: eod };
+  });
+
+  // Overall flags
+  const minDIR = Math.min(...results.filter(r => r.name !== ref.name).map(r => r.disparate_impact_ratio));
+  const maxDPD = Math.max(...results.map(r => Math.abs(r.demographic_parity_diff)));
+  const maxEOD = Math.max(...results.map(r => Math.abs(r.equal_opportunity_diff)));
+
+  const dirFail = minDIR < 0.8;
+  const dpdFail = maxDPD > 0.1;
+  const eodFail = maxEOD > 0.1;
+
+  const overallPass = !dirFail && !dpdFail && !eodFail;
+  const risk = dirFail && dpdFail && eodFail ? "High" : (dirFail || dpdFail || eodFail) ? "Medium" : "Low";
+
+  // Recommendations
+  const recs = [];
+  if (dirFail) recs.push("Apply re-sampling or re-weighting techniques to address under-representation in training data for disadvantaged groups.");
+  if (dpdFail) recs.push("Adjust classification thresholds per group to achieve demographic parity, or apply fairness constraints during model training.");
+  if (eodFail) recs.push("Implement equalized odds post-processing to align true positive rates across groups.");
+  if (dirFail) recs.push("Conduct a DPIA focused on disparate impact before deploying this model in any hiring, lending, or benefits context.");
+  recs.push("Document all fairness metric results and remediation actions in the model card for audit purposes (NIST AI RMF - MEASURE 2.5).");
+  if (risk === "High") recs.push("Escalate to AI Ethics Review Board before production deployment. Consider pausing until disparate impact is below the 0.80 threshold.");
+
+  return { groupStats: results, ref, minDIR, maxDPD, maxEOD, dirFail, dpdFail, eodFail, overallPass, risk, recs, attribute };
+}
+
+// ============================================================
+// CSV PARSER
+// ============================================================
+function parseCSV(text, attributeCol, predictionCol, outcomeCol) {
+  const lines = text.trim().split('\n');
+  const headers = lines[0].split(',').map(h => h.trim().replace(/"/g,''));
+  const attrIdx = headers.indexOf(attributeCol);
+  const predIdx = headers.indexOf(predictionCol);
+  const outIdx = headers.indexOf(outcomeCol);
+  if (attrIdx<0||predIdx<0||outIdx<0) throw new Error(`Column not found. Available: ${headers.join(', ')}`);
+
+  const groups = {};
+  for (let i=1;i<lines.length;i++) {
+    const row = lines[i].split(',').map(c=>c.trim().replace(/"/g,''));
+    if (row.length < headers.length) continue;
+    const grp = row[attrIdx];
+    const pred = parseInt(row[predIdx]);
+    const actual = parseInt(row[outIdx]);
+    if (!groups[grp]) groups[grp] = { total:0, positive_pred:0, actual_positive:0, true_positive:0 };
+    groups[grp].total++;
+    if (pred===1) groups[grp].positive_pred++;
+    if (actual===1) groups[grp].actual_positive++;
+    if (pred===1&&actual===1) groups[grp].true_positive++;
+  }
+  if (Object.keys(groups).length < 2) throw new Error("Need at least 2 groups in the attribute column.");
+  return groups;
+}
+
+// ============================================================
+// STYLES
+// ============================================================
+const css = `
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #080c14; }
+  .fat-root { min-height: 100vh; background: #080c14; color: #e2e8f4; font-family: 'DM Sans', sans-serif; }
+  .fat-header { border-bottom: 1px solid #1a2235; padding: 18px 36px; display: flex; align-items: center; gap: 14px; background: #0a0f1c; }
+  .fat-logo { font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; color: #38bdf8; letter-spacing: .12em; text-transform: uppercase; }
+  .fat-logo span { color: #64748b; }
+  .fat-badge { font-family: 'Space Mono', monospace; font-size: 10px; padding: 3px 8px; border: 1px solid #1e3a5f; border-radius: 3px; color: #38bdf8; background: #0c1929; letter-spacing: .1em; }
+  .fat-body { max-width: 960px; margin: 0 auto; padding: 48px 24px 80px; }
+  .fat-title { font-family: 'Space Mono', monospace; font-size: 22px; font-weight: 700; color: #f1f5f9; margin-bottom: 6px; }
+  .fat-subtitle { font-size: 14px; color: #64748b; margin-bottom: 36px; line-height: 1.5; max-width: 620px; }
+  .sec-label { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: .15em; color: #38bdf8; text-transform: uppercase; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .sec-label::after { content:''; flex:1; height:1px; background:#1a2840; }
+  .card { background: #0d1525; border: 1px solid #1a2840; border-radius: 10px; padding: 24px; margin-bottom: 20px; }
+  .demo-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; padding: 12px 16px; background: #0a1525; border: 1px dashed #1e3a5f; border-radius: 8px; }
+  .demo-label { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: .12em; color: #64748b; text-transform: uppercase; }
+  .demo-chip { background: #0d1525; border: 1px solid #1e2d42; color: #94a3b8; padding: 6px 12px; font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; border-radius: 4px; cursor: pointer; transition: all .15s; }
+  .demo-chip:hover { border-color: #38bdf8; color: #38bdf8; background: #0c2034; }
+  .upload-zone { border: 2px dashed #1e2d42; border-radius: 8px; padding: 36px; text-align: center; cursor: pointer; transition: all .2s; }
+  .upload-zone:hover, .upload-zone.drag { border-color: #38bdf8; background: #0c2034; }
+  .upload-icon { font-size: 32px; margin-bottom: 10px; }
+  .upload-text { font-size: 14px; color: #94a3b8; margin-bottom: 6px; }
+  .upload-sub { font-size: 12px; color: #475569; }
+  .col-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-top: 16px; }
+  .field-group { display: flex; flex-direction: column; gap: 6px; }
+  .field-label { font-size: 12px; color: #94a3b8; font-weight: 500; }
+  .field-input { background: #080c14; border: 1px solid #1e2d42; border-radius: 6px; padding: 9px 12px; font-family: 'DM Sans', sans-serif; font-size: 13px; color: #e2e8f4; outline: none; transition: border-color .2s; }
+  .field-input:focus { border-color: #38bdf8; }
+  .field-select { appearance: none; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+  .field-select option { background: #0d1525; }
+  .btn { padding: 10px 24px; border-radius: 6px; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; border: none; transition: all .2s; }
+  .btn-primary { background: #38bdf8; color: #080c14; }
+  .btn-primary:hover { background: #7dd3fc; }
+  .btn-primary:disabled { background: #1e3a52; color: #475569; cursor: not-allowed; }
+  .btn-secondary { background: transparent; color: #64748b; border: 1px solid #1e2d42; }
+  .btn-secondary:hover { border-color: #334155; color: #94a3b8; }
+  .btn-download { background: #0d1525; color: #38bdf8; border: 1px solid #38bdf8; }
+  .btn-download:hover { background: #0c2034; }
+  .btn-row { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  .error-box { background: #1a0808; border: 1px solid #ef4444; border-radius: 6px; padding: 12px 16px; color: #fca5a5; font-size: 13px; margin-top: 12px; }
+  /* RESULTS */
+  .verdict-banner { border-radius: 10px; padding: 20px 24px; display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+  .verdict-pass { background: #062a1a; border: 1px solid #10b981; }
+  .verdict-fail { background: #2a0808; border: 1px solid #ef4444; }
+  .verdict-warn { background: #2a1a06; border: 1px solid #f97316; }
+  .verdict-icon { font-size: 28px; }
+  .verdict-title { font-family: 'Space Mono', monospace; font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 4px; }
+  .verdict-pass .verdict-title { color: #10b981; }
+  .verdict-fail .verdict-title { color: #ef4444; }
+  .verdict-warn .verdict-title { color: #f97316; }
+  .verdict-sub { font-size: 13px; color: #94a3b8; }
+  .metrics-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-bottom: 24px; }
+  .metric-card { background: #080c14; border: 1px solid #1a2840; border-radius: 8px; padding: 18px; }
+  .metric-name { font-family: 'Space Mono', monospace; font-size: 10px; color: #64748b; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 6px; }
+  .metric-value { font-family: 'Space Mono', monospace; font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+  .metric-pass { color: #10b981; }
+  .metric-fail { color: #ef4444; }
+  .metric-warn { color: #f97316; }
+  .metric-threshold { font-size: 11px; color: #475569; margin-bottom: 8px; }
+  .metric-bar-bg { height: 4px; background: #1e2d42; border-radius: 2px; overflow: hidden; }
+  .metric-bar-fill { height: 100%; border-radius: 2px; transition: width .6s ease; }
+  .metric-desc { font-size: 11px; color: #64748b; line-height: 1.5; margin-top: 10px; }
+  .group-table { width: 100%; border-collapse: collapse; }
+  .group-table th { font-family: 'Space Mono', monospace; font-size: 10px; color: #64748b; letter-spacing: .1em; text-transform: uppercase; padding: 10px 12px; text-align: left; border-bottom: 1px solid #1a2840; }
+  .group-table td { padding: 12px 12px; font-size: 13px; color: #94a3b8; border-bottom: 1px solid #131c30; }
+  .group-table tr:last-child td { border-bottom: none; }
+  .group-table td:first-child { color: #f1f5f9; font-weight: 500; }
+  .group-table tr.ref-row td { background: #0a1020; }
+  .ref-tag { font-family: 'Space Mono', monospace; font-size: 9px; color: #38bdf8; padding: 2px 6px; border: 1px solid #1e3a5f; border-radius: 2px; margin-left: 6px; }
+  .flag-pass { color: #10b981; font-family: 'Space Mono', monospace; font-size: 11px; }
+  .flag-fail { color: #ef4444; font-family: 'Space Mono', monospace; font-size: 11px; }
+  .flag-warn { color: #f97316; font-family: 'Space Mono', monospace; font-size: 11px; }
+  .recs-list { display: flex; flex-direction: column; gap: 10px; }
+  .rec-item { display: flex; gap: 12px; align-items: flex-start; font-size: 13px; color: #94a3b8; line-height: 1.6; }
+  .rec-dot { width: 6px; height: 6px; border-radius: 50%; background: #38bdf8; margin-top: 7px; flex-shrink: 0; }
+  .nist-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 0; }
+  .nist-card { background: #080c14; border: 1px solid #1a2840; border-radius: 8px; padding: 16px; }
+  .nist-id { font-family: 'Space Mono', monospace; font-size: 10px; color: #38bdf8; letter-spacing: .08em; margin-bottom: 4px; }
+  .nist-text { font-size: 12px; color: #64748b; line-height: 1.5; }
+  .result-section-title { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: .15em; color: #38bdf8; text-transform: uppercase; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .result-section-title::after { content:''; flex:1; height:1px; background:#1a2840; }
+  ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: #0a0f1c; } ::-webkit-scrollbar-thumb { background: #1e2d42; border-radius: 4px; }
+  @media(max-width:700px){
+    .metrics-grid{grid-template-columns:1fr}
+    .col-grid{grid-template-columns:1fr}
+    .nist-row{grid-template-columns:1fr}
+    .fat-body{padding:24px 16px 60px}
+  }
+`;
+
+// ============================================================
+// COMPONENTS
+// ============================================================
+function MetricCard({ name, value, pass, threshold, barPct, desc }) {
+  const cls = pass === true ? "metric-pass" : pass === false ? "metric-fail" : "metric-warn";
+  const barColor = pass === true ? "#10b981" : pass === false ? "#ef4444" : "#f97316";
+  return (
+    <div className="metric-card">
+      <div className="metric-name">{name}</div>
+      <div className={`metric-value ${cls}`}>{value}</div>
+      <div className="metric-threshold">{threshold}</div>
+      <div className="metric-bar-bg">
+        <div className="metric-bar-fill" style={{ width: `${Math.min(barPct,100)}%`, background: barColor }} />
+      </div>
+      <div className="metric-desc">{desc}</div>
+    </div>
+  );
+}
+
+function Results({ result, onReset }) {
+  const { groupStats, ref, minDIR, maxDPD, maxEOD, dirFail, dpdFail, eodFail, overallPass, risk, recs, attribute } = result;
+
+  const verdictClass = overallPass ? "verdict-pass" : risk === "High" ? "verdict-fail" : "verdict-warn";
+  const verdictIcon = overallPass ? "✅" : risk === "High" ? "🚨" : "⚠️";
+  const verdictTitle = overallPass ? "Fairness Thresholds Met" : risk === "High" ? "Significant Bias Detected" : "Potential Bias Detected";
+  const verdictSub = overallPass
+    ? "All three fairness metrics are within acceptable thresholds. Document these results in the model card."
+    : `${[dirFail?"Disparate Impact":null,dpdFail?"Demographic Parity":null,eodFail?"Equal Opportunity":null].filter(Boolean).join(", ")} ${[dirFail,dpdFail,eodFail].filter(Boolean).length>1?"metrics fail":"metric fails"} industry thresholds. Remediation required before deployment in high-stakes contexts.`;
+
+  const pct = v => `${(v*100).toFixed(1)}%`;
+
+  return (
+    <div>
+      <div className={`verdict-banner ${verdictClass}`}>
+        <span className="verdict-icon">{verdictIcon}</span>
+        <div>
+          <div className="verdict-title">{verdictTitle} · {risk} Risk</div>
+          <div className="verdict-sub">{verdictSub}</div>
+        </div>
+      </div>
+
+      <div className="result-section-title">Fairness Metrics Summary</div>
+      <div className="metrics-grid" style={{marginBottom:24}}>
+        <MetricCard
+          name="Disparate Impact Ratio"
+          value={minDIR.toFixed(3)}
+          pass={!dirFail}
+          threshold={`Threshold: ≥ 0.800 · ${dirFail?"FAIL":"PASS"}`}
+          barPct={minDIR*100}
+          desc="Ratio of selection rates between least and most favored group. Below 0.8 is the 4/5ths Rule (EEOC standard)."
+        />
+        <MetricCard
+          name="Demographic Parity Diff"
+          value={maxDPD.toFixed(3)}
+          pass={!dpdFail}
+          threshold={`Threshold: ≤ 0.100 · ${dpdFail?"FAIL":"PASS"}`}
+          barPct={maxDPD*100*5}
+          desc="Maximum difference in positive prediction rates across groups. Equal selection rates regardless of group membership."
+        />
+        <MetricCard
+          name="Equal Opportunity Diff"
+          value={maxEOD.toFixed(3)}
+          pass={!eodFail}
+          threshold={`Threshold: ≤ 0.100 · ${eodFail?"FAIL":"PASS"}`}
+          barPct={maxEOD*100*5}
+          desc="Maximum difference in true positive rates across groups. Equal recall for qualified individuals regardless of group."
+        />
+      </div>
+
+      <div className="card" style={{marginBottom:20}}>
+        <div className="result-section-title">Group-Level Breakdown · Protected Attribute: {attribute}</div>
+        <div style={{overflowX:'auto'}}>
+          <table className="group-table">
+            <thead>
+              <tr>
+                <th>Group</th>
+                <th>N</th>
+                <th>Selection Rate</th>
+                <th>True Positive Rate</th>
+                <th>Precision</th>
+                <th>DIR vs Reference</th>
+                <th>Parity Diff</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groupStats.map(g => (
+                <tr key={g.name} className={g.name===ref.name?"ref-row":""}>
+                  <td>{g.name}{g.name===ref.name&&<span className="ref-tag">REF</span>}</td>
+                  <td>{g.total.toLocaleString()}</td>
+                  <td>{pct(g.selection_rate)}</td>
+                  <td>{pct(g.tpr)}</td>
+                  <td>{pct(g.precision)}</td>
+                  <td>
+                    {g.name===ref.name
+                      ? <span className="flag-pass">1.000</span>
+                      : <span className={g.disparate_impact_ratio>=0.8?"flag-pass":g.disparate_impact_ratio>=0.7?"flag-warn":"flag-fail"}>{g.disparate_impact_ratio.toFixed(3)}</span>
+                    }
+                  </td>
+                  <td>
+                    <span className={Math.abs(g.demographic_parity_diff)<=0.1?"flag-pass":Math.abs(g.demographic_parity_diff)<=0.15?"flag-warn":"flag-fail"}>
+                      {g.demographic_parity_diff.toFixed(3)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card" style={{marginBottom:20}}>
+        <div className="result-section-title">Recommended Controls</div>
+        <div className="recs-list">
+          {recs.map((r,i)=><div key={i} className="rec-item"><span className="rec-dot"/>{r}</div>)}
+        </div>
+      </div>
+
+      <div className="card" style={{marginBottom:20}}>
+        <div className="result-section-title">NIST AI RMF · Measure Function Mapping</div>
+        <div className="nist-row">
+          <div className="nist-card">
+            <div className="nist-id">MEASURE 1.1</div>
+            <div className="nist-text">Fairness metrics are defined and measured pre-deployment across all protected attribute groups. Results documented for audit.</div>
+          </div>
+          <div className="nist-card">
+            <div className="nist-id">MEASURE 2.5</div>
+            <div className="nist-text">Disparate impact, demographic parity, and equal opportunity metrics assessed and recorded in model card.</div>
+          </div>
+          <div className="nist-card">
+            <div className="nist-id">MEASURE 2.6</div>
+            <div className="nist-text">Bias evaluation conducted across gender, race, age, and other protected attributes relevant to the deployment context.</div>
+          </div>
+          <div className="nist-card">
+            <div className="nist-id">MEASURE 4.1</div>
+            <div className="nist-text">Fairness metrics should be re-evaluated post-deployment on a defined cadence to detect drift in bias patterns.</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="btn-row">
+        <button className="btn btn-download" onClick={()=>window.print()}>↓ Download Audit Report (PDF)</button>
+        <button className="btn btn-secondary" onClick={onReset}>Run Another Audit</button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// MAIN APP
+// ============================================================
+function App() {
+  const [mode, setMode] = useState("input"); // input | results
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  const [csvText, setCsvText] = useState("");
+  const [csvHeaders, setCsvHeaders] = useState([]);
+  const [attrCol, setAttrCol] = useState("");
+  const [predCol, setPredCol] = useState("");
+  const [outCol, setOutCol] = useState("");
+  const [drag, setDrag] = useState(false);
+  const [activeSample, setActiveSample] = useState(null);
+
+  const loadSample = (key) => {
+    setActiveSample(key);
+    setError("");
+    const s = SAMPLES[key];
+    const r = computeFairness(s.groups, s.attribute);
+    setResult(r);
+    setMode("results");
+  };
+
+  const handleFile = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      const text = e.target.result;
+      setCsvText(text);
+      const headers = text.split('\n')[0].split(',').map(h=>h.trim().replace(/"/g,''));
+      setCsvHeaders(headers);
+      setAttrCol(""); setPredCol(""); setOutCol("");
+    };
+    reader.readAsText(file);
+  };
+
+  const runAudit = () => {
+    setError("");
+    try {
+      const groups = parseCSV(csvText, attrCol, predCol, outCol);
+      const r = computeFairness(groups, attrCol);
+      setResult(r);
+      setMode("results");
+    } catch(e) {
+      setError(e.message);
+    }
+  };
+
+  const reset = () => { setMode("input"); setResult(null); setError(""); setCsvText(""); setCsvHeaders([]); setAttrCol(""); setPredCol(""); setOutCol(""); setActiveSample(null); };
+
+  const canRun = csvText && attrCol && predCol && outCol;
+
+  return (
+    <>
+      <style>{css}</style>
+      <div className="fat-root">
+        <header className="fat-header">
+          <div className="fat-logo">AI<span>/</span>Gov · Fairness Audit</div>
+          <div className="fat-badge">PROTOTYPE v0.1</div>
+        </header>
+
+        <div className="fat-body">
+          <div className="fat-title">Bias & Fairness Audit Tool</div>
+          <div className="fat-subtitle">
+            Pre-deployment fairness analysis for AI models. Computes Disparate Impact Ratio, Demographic Parity Difference, and Equal Opportunity Difference across protected attribute groups. Mapped to NIST AI RMF Measure function.
+          </div>
+
+          {mode === "input" && (
+            <>
+              <div className="demo-bar">
+                <span className="demo-label">Quick Demo:</span>
+                {Object.entries(SAMPLES).map(([key,s])=>(
+                  <button key={key} className="demo-chip" onClick={()=>loadSample(key)}>{s.label}</button>
+                ))}
+              </div>
+
+              <div className="card">
+                <div className="sec-label">Upload Model Prediction Data (CSV)</div>
+                <div
+                  className={`upload-zone${drag?" drag":""}`}
+                  onDragOver={e=>{e.preventDefault();setDrag(true);}}
+                  onDragLeave={()=>setDrag(false)}
+                  onDrop={e=>{e.preventDefault();setDrag(false);handleFile(e.dataTransfer.files[0]);}}
+                  onClick={()=>document.getElementById('csv-input').click()}
+                >
+                  <div className="upload-icon">📂</div>
+                  <div className="upload-text">{csvText ? "✓ File loaded - configure columns below" : "Drop your CSV file here, or click to browse"}</div>
+                  <div className="upload-sub">CSV must include: protected attribute column, binary prediction column (0/1), binary outcome column (0/1)</div>
+                  <input id="csv-input" type="file" accept=".csv" style={{display:'none'}} onChange={e=>handleFile(e.target.files[0])}/>
+                </div>
+
+                {csvHeaders.length > 0 && (
+                  <div className="col-grid">
+                    <div className="field-group">
+                      <label className="field-label">Protected Attribute Column</label>
+                      <select className="field-input field-select" value={attrCol} onChange={e=>setAttrCol(e.target.value)}>
+                        <option value="">Select column...</option>
+                        {csvHeaders.map(h=><option key={h} value={h}>{h}</option>)}
+                      </select>
+                    </div>
+                    <div className="field-group">
+                      <label className="field-label">Model Prediction Column (0/1)</label>
+                      <select className="field-input field-select" value={predCol} onChange={e=>setPredCol(e.target.value)}>
+                        <option value="">Select column...</option>
+                        {csvHeaders.map(h=><option key={h} value={h}>{h}</option>)}
+                      </select>
+                    </div>
+                    <div className="field-group">
+                      <label className="field-label">Actual Outcome Column (0/1)</label>
+                      <select className="field-input field-select" value={outCol} onChange={e=>setOutCol(e.target.value)}>
+                        <option value="">Select column...</option>
+                        {csvHeaders.map(h=><option key={h} value={h}>{h}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                <div className="btn-row">
+                  <button className="btn btn-primary" onClick={runAudit} disabled={!canRun}>Run Fairness Audit</button>
+                </div>
+                {error && <div className="error-box">{error}</div>}
+              </div>
+
+              <div className="card">
+                <div className="sec-label">Expected CSV Format</div>
+                <div style={{fontFamily:'Space Mono,monospace',fontSize:12,color:'#64748b',lineHeight:1.8,background:'#080c14',padding:'16px',borderRadius:6}}>
+                  gender,prediction,outcome<br/>
+                  Male,1,1<br/>
+                  Female,0,1<br/>
+                  Male,1,0<br/>
+                  Female,1,1<br/>
+                  ...
+                </div>
+                <div style={{fontSize:12,color:'#475569',marginTop:12,lineHeight:1.6}}>
+                  The tool computes per-group selection rates, true positive rates, and precision. The group with the highest selection rate is automatically set as the reference group. All other groups are compared against it.
+                </div>
+              </div>
+            </>
+          )}
+
+          {mode === "results" && result && <Results result={result} onReset={reset} />}
+        </div>
+      </div>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
